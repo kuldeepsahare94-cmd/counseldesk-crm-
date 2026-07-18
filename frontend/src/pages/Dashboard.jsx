@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Users, GraduationCap, Building2, Wallet, PhoneCall, CalendarCheck, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 function Card({ label, value, sub, icon: Icon, accent }) {
   return (
@@ -27,6 +28,7 @@ const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [summary, setSummary] = useState(null);
   const [byInstitution, setByInstitution] = useState([]);
   const [counseling, setCounseling] = useState([]);
@@ -50,14 +52,28 @@ export default function Dashboard() {
     .slice(0, 8)
     .map((r) => ({ id: r.id, name: r.name, commission: r.total_commission }));
 
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+
   return (
     <div className="p-8 max-w-6xl">
-      <h1 className="font-display text-2xl font-semibold text-ink" style={{ fontFamily: 'var(--font-display)' }}>
-        Dashboard
-      </h1>
-      <p className="text-sm text-slate-500 mt-1">Overview of inquiries, counseling, and revenue.</p>
+      <div className="rounded-2xl p-6 mb-6 text-white relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, var(--color-ink), var(--color-ink-light))' }}>
+        <div className="absolute inset-0 opacity-[0.06]" style={{
+          backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
+          backgroundSize: '24px 24px',
+        }} />
+        <div className="relative">
+          <p className="text-white/50 text-xs">{today}</p>
+          <h1 className="font-display text-2xl font-semibold mt-1" style={{ fontFamily: 'var(--font-display)' }}>
+            {greeting}, {user?.full_name?.split(' ')[0] || user?.username || 'there'}
+          </h1>
+          <p className="text-white/60 text-sm mt-1">Here's where things stand today.</p>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Link to="/inquiries"><Card label="Total Inquiries" value={summary.total_inquiries} icon={Users} accent="bg-sky-50 text-sky-600" /></Link>
         <Link to="/students"><Card label="Students Converted" value={summary.total_students} icon={GraduationCap} accent="bg-emerald-50 text-good" /></Link>
         <Link to="/students"><Card label="Active Enrollments" value={summary.total_enrollments} icon={Building2} accent="bg-amber-soft text-amber" /></Link>

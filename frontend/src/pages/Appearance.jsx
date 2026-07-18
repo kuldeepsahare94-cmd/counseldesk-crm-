@@ -1,0 +1,43 @@
+import { Check, Palette } from 'lucide-react';
+import { THEMES, useTheme } from '../context/ThemeContext';
+
+export default function Appearance() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <div className="p-8 max-w-3xl">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-amber-soft text-amber flex items-center justify-center">
+          <Palette className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-ink" style={{ fontFamily: 'var(--font-display)' }}>
+            Appearance
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">Pick a theme — changes apply instantly, saved on this device.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-8">
+        {Object.entries(THEMES).map(([key, t]) => (
+          <button key={key} onClick={() => setTheme(key)}
+            className={`text-left rounded-xl border-2 overflow-hidden transition-all ${
+              theme === key ? 'border-amber shadow-md' : 'border-line hover:border-ink/20'
+            }`}>
+            <div className="h-16 flex" style={{ background: t.canvas }}>
+              <div className="w-1/3 h-full" style={{ background: t.ink }} />
+              <div className="flex-1 flex items-center justify-center gap-2">
+                <span className="w-4 h-4 rounded-full" style={{ background: t.accent }} />
+                <span className="w-4 h-4 rounded-full" style={{ background: t.good }} />
+              </div>
+            </div>
+            <div className="px-3 py-2.5 bg-white flex items-center justify-between">
+              <span className="text-sm font-medium text-ink">{t.name}</span>
+              {theme === key && <Check className="w-4 h-4 text-amber" />}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users as UsersIcon, Building2, GraduationCap, Settings as SettingsIcon, LogOut, UserCog, PhoneCall } from 'lucide-react';
+import { LayoutDashboard, Users as UsersIcon, Building2, GraduationCap, Settings as SettingsIcon, LogOut, UserCog, PhoneCall, BarChart3, Palette } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const links = [
@@ -8,7 +8,9 @@ const links = [
   { to: '/followups', label: 'Follow-ups', icon: PhoneCall },
   { to: '/institutions', label: 'Institutions', icon: Building2 },
   { to: '/students', label: 'Students', icon: GraduationCap },
+  { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Custom Fields', icon: SettingsIcon },
+  { to: '/appearance', label: 'Appearance', icon: Palette },
   { to: '/users', label: 'Users', icon: UserCog },
 ];
 
