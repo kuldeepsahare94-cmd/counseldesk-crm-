@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { Users, GraduationCap, Building2, Wallet } from 'lucide-react';
 import { api } from '../api';
 
-function Card({ label, value, sub }) {
+function Card({ label, value, sub, icon: Icon, accent }) {
   return (
-    <div className="bg-white border border-line rounded-xl p-5">
-      <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</div>
+    <div className="bg-white border border-line rounded-xl p-5 hover:border-ink/20 hover:shadow-sm transition-all">
+      <div className="flex items-start justify-between">
+        <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</div>
+        {Icon && (
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${accent || 'bg-slate-100 text-slate-500'}`}>
+            <Icon className="w-4 h-4" />
+          </div>
+        )}
+      </div>
       <div className="font-display text-3xl font-semibold text-ink mt-2" style={{ fontFamily: 'var(--font-display)' }}>
         {value}
       </div>
@@ -48,10 +56,10 @@ export default function Dashboard() {
       <p className="text-sm text-slate-500 mt-1">Overview of inquiries, counseling, and revenue.</p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <Link to="/inquiries"><Card label="Total Inquiries" value={summary.total_inquiries} /></Link>
-        <Link to="/students"><Card label="Students Converted" value={summary.total_students} /></Link>
-        <Link to="/students"><Card label="Active Enrollments" value={summary.total_enrollments} /></Link>
-        <Card label="Revenue Earned" value={inr(summary.revenue_total)} sub={`${inr(summary.revenue_pending)} pending`} />
+        <Link to="/inquiries"><Card label="Total Inquiries" value={summary.total_inquiries} icon={Users} accent="bg-sky-50 text-sky-600" /></Link>
+        <Link to="/students"><Card label="Students Converted" value={summary.total_students} icon={GraduationCap} accent="bg-emerald-50 text-good" /></Link>
+        <Link to="/students"><Card label="Active Enrollments" value={summary.total_enrollments} icon={Building2} accent="bg-amber-soft text-amber" /></Link>
+        <Card label="Revenue Earned" value={inr(summary.revenue_total)} sub={`${inr(summary.revenue_pending)} pending`} icon={Wallet} accent="bg-ink/5 text-ink" />
       </div>
 
       {funnel && (

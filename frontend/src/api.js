@@ -5,11 +5,26 @@ const API_ROOT = import.meta.env.VITE_API_BASE_URL || '';
 const BASE = `${API_ROOT}/api`;
 
 async function req(method, path, body) {
+  const token = localStorage.getItem('cd_token');
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(BASE + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401) {
+    localStorage.removeItem('cd_token');
+    localStorage.removeItem('cd_user');
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error('Session expired, please log in again');
+  }
+
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || res.statusText);
@@ -17,6 +32,15 @@ async function req(method, path, body) {
 }
 
 export const api = {
+  // auth
+  login: (username, password) => req('POST', '/auth/login', { username, password }),
+
+  // users
+  listUsers: () => req('GET', '/users'),
+  createUser: (body) => req('POST', '/users', body),
+  updateUser: (id, body) => req('PUT', `/users/${id}`, body),
+  deleteUser: (id) => req('DELETE', `/users/${id}`),
+
   // institutions
   listInstitutions: () => req('GET', '/institutions'),
   getInstitution: (id) => req('GET', `/institutions/${id}`),
