@@ -64,6 +64,15 @@ export const api = {
   convertInquiry: (id) => req('POST', `/inquiries/${id}/convert`),
   addFollowup: (id, body) => req('POST', `/inquiries/${id}/followups`, body),
 
+  // follow-ups (call log)
+  listFollowups: (params) => {
+    const q = new URLSearchParams(params || {}).toString();
+    return req('GET', '/followups' + (q ? `?${q}` : ''));
+  },
+  updateFollowup: (id, body) => req('PUT', `/followups/${id}`, body),
+  deleteFollowup: (id) => req('DELETE', `/followups/${id}`),
+  followupsSummary: () => req('GET', '/reports/followups-summary'),
+
   // students
   listStudents: () => req('GET', '/students'),
   getStudent: (id) => req('GET', `/students/${id}`),

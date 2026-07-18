@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inquiries from './pages/Inquiries';
 import InquiryDetail from './pages/InquiryDetail';
+import FollowUps from './pages/FollowUps';
 import Institutions from './pages/Institutions';
 import InstitutionDetail from './pages/InstitutionDetail';
 import Students from './pages/Students';
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/inquiries" element={<Inquiries />} />
             <Route path="/inquiries/:id" element={<InquiryDetail />} />
+            <Route path="/followups" element={<FollowUps />} />
             <Route path="/institutions" element={<Institutions />} />
             <Route path="/institutions/:id" element={<InstitutionDetail />} />
             <Route path="/students" element={<Students />} />

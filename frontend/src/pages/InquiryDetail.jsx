@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { PhoneCall, CalendarClock, CheckCircle2 } from 'lucide-react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 import CustomFieldsPanel from '../components/CustomFieldsPanel';
 
 const LINK_STATUSES = ['Counseling', 'Applied', 'Offer', 'Rejected', 'Not Interested'];
+const DISPOSITIONS = ['Interested', 'Not Interested', 'Call Back Later', 'Not Reachable', 'Wrong Number', 'Converted', 'No Response', 'Other'];
 
 export default function InquiryDetail() {
   const { id } = useParams();
@@ -15,6 +17,10 @@ export default function InquiryDetail() {
   const [waMessage, setWaMessage] = useState('');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
+  const [callTab, setCallTab] = useState('log'); // 'log' | 'schedule'
+  const [callForm, setCallForm] = useState({ disposition: '', remark: '', scheduled_at: '' });
+  const [completingId, setCompletingId] = useState(null);
+  const [completeForm, setCompleteForm] = useState({ disposition: '', remark: '' });
 
   const load = () => {
     api.getInquiry(id).then((inq) => { setInquiry(inq); setForm(inq); });
@@ -74,13 +80,50 @@ export default function InquiryDetail() {
     if (!inquiry.phone) return alert('No phone number on this inquiry.');
     const phone = inquiry.phone.replace(/\D/g, '');
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(waMessage)}`, '_blank');
-    await api.addFollowup(id, { type: 'whatsapp', message: waMessage });
+    await api.addFollowup(id, { type: 'whatsapp', message: waMessage, status: 'Done' });
     load();
   };
 
   const logCall = async () => {
-    await api.addFollowup(id, { type: 'call', message: 'Called student' });
-    load();
+    try {
+      await api.addFollowup(id, {
+        type: 'call', status: 'Done',
+        disposition: callForm.disposition, remark: callForm.remark,
+      });
+      setCallForm({ disposition: '', remark: '', scheduled_at: '' });
+      load();
+    } catch (err) {
+      alert('Could not log call: ' + err.message);
+    }
+  };
+
+  const scheduleCall = async () => {
+    if (!callForm.scheduled_at) return alert('Pick a date and time first.');
+    try {
+      await api.addFollowup(id, {
+        type: 'call', status: 'Planned',
+        scheduled_at: callForm.scheduled_at, remark: callForm.remark,
+      });
+      setCallForm({ disposition: '', remark: '', scheduled_at: '' });
+      load();
+    } catch (err) {
+      alert('Could not schedule: ' + err.message);
+    }
+  };
+
+  const startCompleteFollowup = (f) => {
+    setCompletingId(f.id);
+    setCompleteForm({ disposition: f.disposition || '', remark: f.remark || '' });
+  };
+
+  const saveCompleteFollowup = async (fid) => {
+    try {
+      await api.updateFollowup(fid, { status: 'Done', disposition: completeForm.disposition, remark: completeForm.remark });
+      setCompletingId(null);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
   };
 
   return (
@@ -171,22 +214,96 @@ export default function InquiryDetail() {
       {/* Follow ups */}
       <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Follow-ups</h2>
       <div className="bg-white border border-line rounded-xl p-4">
-        <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)}
-          className="w-full border border-line rounded-lg px-3 py-2 text-sm" rows={2} />
-        <div className="flex gap-2 mt-3">
-          <button onClick={sendWhatsApp} className="bg-good text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90">
+        {/* WhatsApp quick send */}
+        <div className="mb-4 pb-4 border-b border-line">
+          <label className="text-xs text-slate-500 font-medium block mb-1">WhatsApp message</label>
+          <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)}
+            className="w-full border border-line rounded-lg px-3 py-2 text-sm" rows={2} />
+          <button onClick={sendWhatsApp} className="mt-2 bg-good text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90">
             Send WhatsApp
           </button>
-          <button onClick={logCall} className="border border-line text-sm font-medium px-4 py-2 rounded-lg text-ink hover:bg-canvas">
-            Log a call
+        </div>
+
+        {/* Log or schedule a call */}
+        <div className="flex gap-2 mb-3">
+          <button onClick={() => setCallTab('log')}
+            className={`text-xs font-medium px-3 py-1.5 rounded-full border flex items-center gap-1 ${
+              callTab === 'log' ? 'bg-ink text-white border-ink' : 'border-line text-slate-500'
+            }`}>
+            <PhoneCall className="w-3.5 h-3.5" /> Log a call
+          </button>
+          <button onClick={() => setCallTab('schedule')}
+            className={`text-xs font-medium px-3 py-1.5 rounded-full border flex items-center gap-1 ${
+              callTab === 'schedule' ? 'bg-ink text-white border-ink' : 'border-line text-slate-500'
+            }`}>
+            <CalendarClock className="w-3.5 h-3.5" /> Schedule for later
           </button>
         </div>
-        <div className="mt-4 divide-y divide-line">
+
+        {callTab === 'log' ? (
+          <div className="grid grid-cols-2 gap-2">
+            <select value={callForm.disposition} onChange={(e) => setCallForm({ ...callForm, disposition: e.target.value })}
+              className="border border-line rounded-lg px-3 py-2 text-sm">
+              <option value="">Disposition…</option>
+              {DISPOSITIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <input placeholder="Remark" value={callForm.remark} onChange={(e) => setCallForm({ ...callForm, remark: e.target.value })}
+              className="border border-line rounded-lg px-3 py-2 text-sm" />
+            <button onClick={logCall} className="col-span-2 border border-line text-sm font-medium px-4 py-2 rounded-lg text-ink hover:bg-canvas">
+              Save call log
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <input type="datetime-local" value={callForm.scheduled_at} onChange={(e) => setCallForm({ ...callForm, scheduled_at: e.target.value })}
+              className="border border-line rounded-lg px-3 py-2 text-sm col-span-2" />
+            <input placeholder="Remark (what to discuss)" value={callForm.remark} onChange={(e) => setCallForm({ ...callForm, remark: e.target.value })}
+              className="border border-line rounded-lg px-3 py-2 text-sm col-span-2" />
+            <button onClick={scheduleCall} className="col-span-2 bg-amber text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90">
+              Schedule follow-up
+            </button>
+          </div>
+        )}
+
+        {/* History */}
+        <div className="mt-4 pt-4 border-t border-line divide-y divide-line">
           {inquiry.followups.map((f) => (
-            <div key={f.id} className="py-2 text-sm flex justify-between">
-              <span className="text-ink">{f.type}: {f.message}</span>
-              <span className="text-slate-400 text-xs">{f.sent_at}</span>
-            </div>
+            completingId === f.id ? (
+              <div key={f.id} className="py-2.5 bg-canvas/40 -mx-4 px-4">
+                <div className="flex items-center gap-2">
+                  <select value={completeForm.disposition} onChange={(e) => setCompleteForm({ ...completeForm, disposition: e.target.value })}
+                    className="border border-line rounded-lg px-2 py-1.5 text-xs">
+                    <option value="">Disposition…</option>
+                    {DISPOSITIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <input placeholder="Remark" value={completeForm.remark} onChange={(e) => setCompleteForm({ ...completeForm, remark: e.target.value })}
+                    className="border border-line rounded-lg px-2 py-1.5 text-xs flex-1" />
+                  <button onClick={() => saveCompleteFollowup(f.id)} className="text-xs font-medium text-good hover:underline">Save</button>
+                  <button onClick={() => setCompletingId(null)} className="text-xs text-slate-400 hover:underline">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div key={f.id} className="py-2.5 text-sm flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-ink flex items-center gap-2">
+                    <span className="capitalize font-medium">{f.type}</span>
+                    <StatusBadge status={f.status === 'Planned' && new Date(f.scheduled_at) < new Date() ? 'Missed' : f.status} />
+                    {f.disposition && <span className="text-xs text-slate-500">{f.disposition}</span>}
+                  </div>
+                  {(f.remark || f.message) && <div className="text-xs text-slate-400 mt-0.5">{f.remark || f.message}</div>}
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-slate-400 text-xs">
+                    {f.status === 'Planned' ? f.scheduled_at : (f.completed_at || f.sent_at)}
+                  </div>
+                  {f.status === 'Planned' && (
+                    <button onClick={() => startCompleteFollowup(f)} className="text-xs text-ink hover:underline flex items-center gap-1 mt-1 ml-auto">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Mark done
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
           ))}
           {inquiry.followups.length === 0 && <p className="text-sm text-slate-400 py-2">No follow-ups logged yet.</p>}
         </div>

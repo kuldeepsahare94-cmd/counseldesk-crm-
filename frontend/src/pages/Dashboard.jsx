@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Users, GraduationCap, Building2, Wallet } from 'lucide-react';
+import { Users, GraduationCap, Building2, Wallet, PhoneCall, CalendarCheck, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 
 function Card({ label, value, sub, icon: Icon, accent }) {
@@ -32,6 +32,7 @@ export default function Dashboard() {
   const [counseling, setCounseling] = useState([]);
   const [trend, setTrend] = useState([]);
   const [funnel, setFunnel] = useState(null);
+  const [followupsSummary, setFollowupsSummary] = useState(null);
 
   useEffect(() => {
     api.summary().then(setSummary);
@@ -39,6 +40,7 @@ export default function Dashboard() {
     api.institutionCounselingReport().then(setCounseling);
     api.trend().then(setTrend);
     api.funnel().then(setFunnel);
+    api.followupsSummary().then(setFollowupsSummary);
   }, []);
 
   if (!summary) return <div className="p-8 text-slate-400">Loading…</div>;
@@ -70,6 +72,23 @@ export default function Dashboard() {
               {s.status}: {s.c}
             </Link>
           ))}
+        </div>
+      )}
+
+      {followupsSummary && (
+        <div className="mt-6">
+          <h2 className="text-sm font-semibold text-ink mb-3">Follow-ups</h2>
+          <div className="grid grid-cols-3 gap-4">
+            <Link to="/followups?filter=today">
+              <Card label="Planned Today" value={followupsSummary.planned_today} icon={CalendarCheck} accent="bg-sky-50 text-sky-600" />
+            </Link>
+            <Link to="/followups?filter=done">
+              <Card label="Done Today" value={followupsSummary.done_today} icon={PhoneCall} accent="bg-emerald-50 text-good" />
+            </Link>
+            <Link to="/followups?filter=overdue">
+              <Card label="Overdue" value={followupsSummary.overdue} icon={AlertTriangle} accent="bg-red-50 text-warn" />
+            </Link>
+          </div>
         </div>
       )}
 

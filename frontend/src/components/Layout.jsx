@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users as UsersIcon, Building2, GraduationCap, Settings as SettingsIcon, LogOut, UserCog } from 'lucide-react';
+import { LayoutDashboard, Users as UsersIcon, Building2, GraduationCap, Settings as SettingsIcon, LogOut, UserCog, PhoneCall } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const links = [
   { to: '/', label: 'Dashboard', end: true, icon: LayoutDashboard },
   { to: '/inquiries', label: 'Inquiries', icon: UsersIcon },
+  { to: '/followups', label: 'Follow-ups', icon: PhoneCall },
   { to: '/institutions', label: 'Institutions', icon: Building2 },
   { to: '/students', label: 'Students', icon: GraduationCap },
   { to: '/settings', label: 'Custom Fields', icon: SettingsIcon },

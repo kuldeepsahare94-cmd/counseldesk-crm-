@@ -14,6 +14,9 @@ const STYLES = {
   Pending: 'bg-amber-soft text-amber',
   Partial: 'bg-sky-50 text-sky-700',
   Received: 'bg-emerald-100 text-good',
+  Planned: 'bg-sky-50 text-sky-700',
+  Done: 'bg-emerald-100 text-good',
+  Missed: 'bg-red-50 text-warn',
 };
 
 export default function StatusBadge({ status }) {
