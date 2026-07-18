@@ -4,16 +4,21 @@ const db = require('../db');
 
 // List inquiries with linked institution count
 router.get('/', (req, res) => {
-  const { status } = req.query;
+  const { status, month } = req.query;
   let sql = `
     SELECT inq.*,
       (SELECT COUNT(*) FROM inquiry_institutions ii WHERE ii.inquiry_id = inq.id) AS institution_count
     FROM inquiries inq
+    WHERE 1=1
   `;
   const params = [];
   if (status) {
-    sql += ' WHERE inq.status = ?';
+    sql += ' AND inq.status = ?';
     params.push(status);
+  }
+  if (month) {
+    sql += " AND strftime('%Y-%m', inq.created_at) = ?";
+    params.push(month);
   }
   sql += ' ORDER BY inq.created_at DESC';
   res.json(db.prepare(sql).all(...params));

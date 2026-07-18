@@ -63,4 +63,16 @@ router.get('/funnel', (req, res) => {
   res.json({ inquiry_stages: stages, total_students: students, total_enrolled: enrolled });
 });
 
+// Monthly inquiry trend (last 6 months)
+router.get('/trend', (req, res) => {
+  const rows = db.prepare(`
+    SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS inquiries
+    FROM inquiries
+    GROUP BY month
+    ORDER BY month DESC
+    LIMIT 6
+  `).all();
+  res.json(rows.reverse());
+});
+
 module.exports = router;

@@ -87,6 +87,30 @@ CREATE INDEX IF NOT EXISTS idx_ii_inquiry ON inquiry_institutions(inquiry_id);
 CREATE INDEX IF NOT EXISTS idx_ii_institution ON inquiry_institutions(institution_id);
 CREATE INDEX IF NOT EXISTS idx_enroll_institution ON enrollments(institution_id);
 CREATE INDEX IF NOT EXISTS idx_followup_inquiry ON followups(inquiry_id);
+
+-- Custom fields: lets the consultancy add their own fields/dropdowns without code changes
+CREATE TABLE IF NOT EXISTS custom_fields (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,   -- inquiry | institution | student | enrollment
+  label TEXT NOT NULL,
+  field_type TEXT NOT NULL DEFAULT 'text', -- text | number | date | dropdown
+  options TEXT,                 -- JSON array string, only for dropdown
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS custom_field_values (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  field_id INTEGER NOT NULL,
+  record_id INTEGER NOT NULL,
+  value TEXT,
+  FOREIGN KEY (field_id) REFERENCES custom_fields(id) ON DELETE CASCADE,
+  UNIQUE(field_id, record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cfv_field ON custom_field_values(field_id);
+CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_values(record_id);
+CREATE INDEX IF NOT EXISTS idx_cf_entity ON custom_fields(entity_type);
 `);
 
 module.exports = db;
