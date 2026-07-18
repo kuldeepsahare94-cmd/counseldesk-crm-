@@ -111,6 +111,27 @@ CREATE TABLE IF NOT EXISTS custom_field_values (
 CREATE INDEX IF NOT EXISTS idx_cfv_field ON custom_field_values(field_id);
 CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_values(record_id);
 CREATE INDEX IF NOT EXISTS idx_cf_entity ON custom_fields(entity_type);
+
+-- Users who can log in to the CRM
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  full_name TEXT,
+  active INTEGER NOT NULL DEFAULT 1,  -- 1 = can log in, 0 = blocked
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
+
+// Seed a default admin account the first time the app runs, so there's
+// always at least one way in. Change this password immediately after login.
+const bcrypt = require('bcryptjs');
+const userCount = db.prepare('SELECT COUNT(*) c FROM users').get().c;
+if (userCount === 0) {
+  const hash = bcrypt.hashSync('admin123', 10);
+  db.prepare('INSERT INTO users (username, password_hash, full_name, active) VALUES (?,?,?,1)')
+    .run('admin', hash, 'Administrator');
+  console.log('Seeded default login -> username: admin / password: admin123 (change this immediately)');
+}
 
 module.exports = db;
