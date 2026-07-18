@@ -5,6 +5,7 @@ const links = [
   { to: '/inquiries', label: 'Inquiries' },
   { to: '/institutions', label: 'Institutions' },
   { to: '/students', label: 'Students' },
+  { to: '/settings', label: 'Settings' },
 ];
 
 export default function Layout() {

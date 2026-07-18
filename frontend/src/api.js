@@ -26,7 +26,10 @@ export const api = {
   institutionCounselings: (id) => req('GET', `/institutions/${id}/counselings`),
 
   // inquiries
-  listInquiries: (status) => req('GET', '/inquiries' + (status ? `?status=${status}` : '')),
+  listInquiries: (params) => {
+    const q = new URLSearchParams(params || {}).toString();
+    return req('GET', '/inquiries' + (q ? `?${q}` : ''));
+  },
   getInquiry: (id) => req('GET', `/inquiries/${id}`),
   createInquiry: (body) => req('POST', '/inquiries', body),
   updateInquiry: (id, body) => req('PUT', `/inquiries/${id}`, body),
@@ -53,4 +56,13 @@ export const api = {
   institutionCounselingReport: () => req('GET', '/reports/institution-counseling'),
   revenueByInstitution: () => req('GET', '/reports/revenue-by-institution'),
   funnel: () => req('GET', '/reports/funnel'),
+  trend: () => req('GET', '/reports/trend'),
+
+  // custom fields
+  listCustomFields: (entityType) => req('GET', `/custom-fields?entity_type=${entityType}`),
+  createCustomField: (body) => req('POST', '/custom-fields', body),
+  updateCustomField: (id, body) => req('PUT', `/custom-fields/${id}`, body),
+  deleteCustomField: (id) => req('DELETE', `/custom-fields/${id}`),
+  getCustomValues: (entityType, recordId) => req('GET', `/custom-fields/values/${entityType}/${recordId}`),
+  saveCustomValues: (entityType, recordId, values) => req('POST', `/custom-fields/values/${entityType}/${recordId}`, { values }),
 };

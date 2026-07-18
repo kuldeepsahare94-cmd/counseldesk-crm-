@@ -7,6 +7,7 @@ import Institutions from './pages/Institutions';
 import InstitutionDetail from './pages/InstitutionDetail';
 import Students from './pages/Students';
 import StudentDetail from './pages/StudentDetail';
+import Settings from './pages/Settings';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/institutions/:id" element={<InstitutionDetail />} />
           <Route path="/students" element={<Students />} />
           <Route path="/students/:id" element={<StudentDetail />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

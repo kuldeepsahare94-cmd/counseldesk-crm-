@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
+import CustomFieldsPanel from '../components/CustomFieldsPanel';
 
 const LINK_STATUSES = ['Counseling', 'Applied', 'Offer', 'Rejected', 'Not Interested'];
 
@@ -12,9 +13,11 @@ export default function InquiryDetail() {
   const [institutions, setInstitutions] = useState([]);
   const [selectedInst, setSelectedInst] = useState('');
   const [waMessage, setWaMessage] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(null);
 
   const load = () => {
-    api.getInquiry(id).then(setInquiry);
+    api.getInquiry(id).then((inq) => { setInquiry(inq); setForm(inq); });
     api.listInstitutions().then(setInstitutions);
   };
   useEffect(() => { load(); }, [id]);
@@ -29,19 +32,42 @@ export default function InquiryDetail() {
 
   const linkInstitution = async () => {
     if (!selectedInst) return;
-    await api.linkInstitution(id, { institution_id: Number(selectedInst) });
-    setSelectedInst('');
-    load();
+    try {
+      await api.linkInstitution(id, { institution_id: Number(selectedInst) });
+      setSelectedInst('');
+      load();
+    } catch (err) {
+      alert('Could not link institution: ' + err.message);
+    }
   };
 
   const updateLinkStatus = async (linkId, status) => {
-    await api.updateLink(linkId, { status });
-    load();
+    try {
+      await api.updateLink(linkId, { status });
+      load();
+    } catch (err) {
+      alert('Could not update status: ' + err.message);
+    }
   };
 
   const convert = async () => {
-    await api.convertInquiry(id);
-    load();
+    try {
+      await api.convertInquiry(id);
+      load();
+    } catch (err) {
+      alert('Could not convert: ' + err.message);
+    }
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.updateInquiry(id, form);
+      setEditing(false);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
   };
 
   const sendWhatsApp = async () => {
@@ -69,6 +95,10 @@ export default function InquiryDetail() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={inquiry.status} />
+          <button onClick={() => { setForm(inquiry); setEditing((s) => !s); }}
+            className="border border-line text-sm font-medium px-4 py-2 rounded-lg text-ink hover:bg-canvas">
+            {editing ? 'Cancel' : 'Edit'}
+          </button>
           {inquiry.status !== 'Converted' && (
             <button onClick={convert} className="bg-amber text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90">
               Convert to student
@@ -76,6 +106,34 @@ export default function InquiryDetail() {
           )}
         </div>
       </div>
+
+      {editing && (
+        <form onSubmit={saveEdit} className="bg-white border border-line rounded-xl p-5 mt-5 grid grid-cols-2 gap-4">
+          <input required placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+            value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input placeholder="Phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          <input placeholder="Email" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <input placeholder="Course interest" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.course_interest || ''} onChange={(e) => setForm({ ...form, course_interest: e.target.value })} />
+          <input placeholder="Source" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.source || ''} onChange={(e) => setForm({ ...form, source: e.target.value })} />
+          <input placeholder="Counselor" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.counselor || ''} onChange={(e) => setForm({ ...form, counselor: e.target.value })} />
+          <select className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+            <option>New</option><option>In Counseling</option><option>Converted</option><option>Dropped</option>
+          </select>
+          <button type="submit" className="col-span-2 bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">
+            Save changes
+          </button>
+        </form>
+      )}
+
+      {/* Custom fields */}
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Custom fields</h2>
+      <CustomFieldsPanel entityType="inquiry" recordId={inquiry.id} />
 
       {/* Institutions linked for counseling */}
       <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Institutions in counseling</h2>

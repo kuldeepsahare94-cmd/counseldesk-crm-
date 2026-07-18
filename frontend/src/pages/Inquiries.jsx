@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 
@@ -7,20 +7,46 @@ const empty = { name: '', phone: '', email: '', course_interest: '', source: '',
 const STATUSES = ['All', 'New', 'In Counseling', 'Converted', 'Dropped'];
 
 export default function Inquiries() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialFilter = searchParams.get('status') || 'All';
+  const monthFilter = searchParams.get('month') || '';
   const [list, setList] = useState([]);
-  const [filter, setFilter] = useState('All');
+  const [filter, setFilter] = useState(initialFilter);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(empty);
 
-  const load = () => api.listInquiries(filter === 'All' ? undefined : filter).then(setList);
-  useEffect(() => { load(); }, [filter]);
+  const load = () => {
+    const params = {};
+    if (filter !== 'All') params.status = filter;
+    if (monthFilter) params.month = monthFilter;
+    api.listInquiries(params).then(setList);
+  };
+  useEffect(() => { load(); }, [filter, monthFilter]);
+
+  const changeFilter = (s) => {
+    setFilter(s);
+    const next = {};
+    if (s !== 'All') next.status = s;
+    if (monthFilter) next.month = monthFilter;
+    setSearchParams(next);
+  };
+
+  const clearMonth = () => {
+    const next = {};
+    if (filter !== 'All') next.status = filter;
+    setSearchParams(next);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    await api.createInquiry(form);
-    setForm(empty);
-    setShowForm(false);
-    load();
+    try {
+      await api.createInquiry(form);
+      setForm(empty);
+      setShowForm(false);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
   };
 
   return (
@@ -57,15 +83,21 @@ export default function Inquiries() {
         </form>
       )}
 
-      <div className="flex gap-2 mt-6">
+      <div className="flex gap-2 mt-6 items-center">
         {STATUSES.map((s) => (
-          <button key={s} onClick={() => setFilter(s)}
+          <button key={s} onClick={() => changeFilter(s)}
             className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
               filter === s ? 'bg-ink text-white border-ink' : 'border-line text-slate-500 hover:border-ink/40'
             }`}>
             {s}
           </button>
         ))}
+        {monthFilter && (
+          <span className="text-xs font-medium px-3 py-1.5 rounded-full bg-amber-soft text-amber flex items-center gap-2">
+            Month: {monthFilter}
+            <button onClick={clearMonth} className="hover:opacity-70">✕</button>
+          </span>
+        )}
       </div>
 
       <div className="bg-white border border-line rounded-xl mt-4 overflow-hidden">

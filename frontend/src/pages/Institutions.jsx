@@ -14,10 +14,14 @@ export default function Institutions() {
 
   const submit = async (e) => {
     e.preventDefault();
-    await api.createInstitution({ ...form, commission_value: Number(form.commission_value) || 0 });
-    setForm(empty);
-    setShowForm(false);
-    load();
+    try {
+      await api.createInstitution({ ...form, commission_value: Number(form.commission_value) || 0 });
+      setForm(empty);
+      setShowForm(false);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
   };
 
   return (
