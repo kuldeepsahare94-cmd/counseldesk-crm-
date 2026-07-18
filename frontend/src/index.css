@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #14213D;
+  --color-ink-light: #2A3F63;
+  --color-amber: #E3A008;
+  --color-amber-soft: #FDF3D9;
+  --color-canvas: #F6F5F1;
+  --color-line: #E2E0D8;
+  --color-good: #2F855A;
+  --color-warn: #C05621;
+  --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+  --font-body: "Inter", "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
