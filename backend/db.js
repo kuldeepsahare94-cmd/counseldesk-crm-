@@ -76,8 +76,13 @@ CREATE TABLE IF NOT EXISTS enrollments (
 CREATE TABLE IF NOT EXISTS followups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inquiry_id INTEGER NOT NULL,
-  type TEXT,           -- whatsapp / sms / call / email
-  message TEXT,
+  type TEXT,                -- call / whatsapp / sms / email
+  message TEXT,             -- what was sent (e.g. WhatsApp text) or plan notes
+  disposition TEXT,         -- Interested / Not Interested / Call Back Later / Not Reachable / Wrong Number / Converted / No Response / Other
+  remark TEXT,              -- free-text notes from the counselor
+  status TEXT DEFAULT 'Done',   -- Planned / Done / Missed
+  scheduled_at TEXT,        -- when a Planned follow-up is due (null if logged as already done)
+  completed_at TEXT,        -- when it was marked Done
   sent_by TEXT,
   sent_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (inquiry_id) REFERENCES inquiries(id) ON DELETE CASCADE
@@ -122,6 +127,22 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT DEFAULT (datetime('now'))
 );
 `);
+
+// Safe migration: if an older followups table exists without these columns, add them.
+const followupCols = db.prepare("PRAGMA table_info(followups)").all().map((c) => c.name);
+const addColIfMissing = (col, def) => {
+  if (!followupCols.includes(col)) {
+    try { db.exec(`ALTER TABLE followups ADD COLUMN ${col} ${def}`); } catch (e) { /* ignore */ }
+  }
+};
+addColIfMissing('disposition', 'TEXT');
+addColIfMissing('remark', 'TEXT');
+addColIfMissing('status', "TEXT DEFAULT 'Done'");
+addColIfMissing('scheduled_at', 'TEXT');
+addColIfMissing('completed_at', 'TEXT');
+
+db.exec(`CREATE INDEX IF NOT EXISTS idx_followup_status ON followups(status);
+CREATE INDEX IF NOT EXISTS idx_followup_scheduled ON followups(scheduled_at);`);
 
 // Seed a default admin account the first time the app runs, so there's
 // always at least one way in. Change this password immediately after login.

@@ -75,4 +75,19 @@ router.get('/trend', (req, res) => {
   res.json(rows.reverse());
 });
 
+// Follow-up tracking summary for the dashboard
+router.get('/followups-summary', (req, res) => {
+  const plannedToday = db.prepare(`
+    SELECT COUNT(*) c FROM followups WHERE status='Planned' AND date(scheduled_at) = date('now')
+  `).get().c;
+  const doneToday = db.prepare(`
+    SELECT COUNT(*) c FROM followups WHERE status='Done' AND date(COALESCE(completed_at, sent_at)) = date('now')
+  `).get().c;
+  const overdue = db.prepare(`
+    SELECT COUNT(*) c FROM followups WHERE status='Planned' AND datetime(scheduled_at) < datetime('now')
+  `).get().c;
+  const totalPlanned = db.prepare(`SELECT COUNT(*) c FROM followups WHERE status='Planned'`).get().c;
+  res.json({ planned_today: plannedToday, done_today: doneToday, overdue, total_planned: totalPlanned });
+});
+
 module.exports = router;

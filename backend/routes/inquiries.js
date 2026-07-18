@@ -111,12 +111,17 @@ router.post('/:id/convert', (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM students WHERE id = ?').get(info.lastInsertRowid));
 });
 
-// Log a manual follow-up (WhatsApp/SMS/Call)
+// Log a follow-up (completed now) or schedule one for the future.
+// Body: { type, message, sent_by, disposition, remark, status: 'Done'|'Planned', scheduled_at }
 router.post('/:id/followups', (req, res) => {
-  const { type, message, sent_by } = req.body;
+  const { type, message, sent_by, disposition, remark, status, scheduled_at } = req.body;
+  const finalStatus = status || 'Done';
+  const completed_at = finalStatus === 'Done' ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null;
   const info = db.prepare(`
-    INSERT INTO followups (inquiry_id, type, message, sent_by) VALUES (?,?,?,?)
-  `).run(req.params.id, type || 'whatsapp', message || '', sent_by || null);
+    INSERT INTO followups (inquiry_id, type, message, disposition, remark, status, scheduled_at, completed_at, sent_by)
+    VALUES (?,?,?,?,?,?,?,?,?)
+  `).run(req.params.id, type || 'call', message || '', disposition || null, remark || null,
+         finalStatus, scheduled_at || null, completed_at, sent_by || null);
   res.status(201).json(db.prepare('SELECT * FROM followups WHERE id = ?').get(info.lastInsertRowid));
 });
 

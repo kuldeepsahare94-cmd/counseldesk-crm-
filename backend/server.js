@@ -18,6 +18,7 @@ app.use('/api/students', requireAuth, require('./routes/students'));
 app.use('/api/enrollments', requireAuth, require('./routes/enrollments'));
 app.use('/api/reports', requireAuth, require('./routes/reports'));
 app.use('/api/custom-fields', requireAuth, require('./routes/customFields'));
+app.use('/api/followups', requireAuth, require('./routes/followups'));
 app.use('/api/users', requireAuth, require('./routes/users'));
 
 const PORT = process.env.PORT || 4000;
