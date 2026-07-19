@@ -1,8 +1,8 @@
-import { Check, Palette } from 'lucide-react';
+import { Check, Palette, Moon, Sun } from 'lucide-react';
 import { THEMES, useTheme } from '../context/ThemeContext';
 
 export default function Appearance() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, dark, setDark } = useTheme();
 
   return (
     <div className="p-8 max-w-3xl">
@@ -16,6 +16,20 @@ export default function Appearance() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">Pick a theme — changes apply instantly, saved on this device.</p>
         </div>
+      </div>
+
+      <div className="bg-white border border-line rounded-xl p-4 mt-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {dark ? <Moon className="w-4 h-4 text-ink" /> : <Sun className="w-4 h-4 text-ink" />}
+          <div>
+            <div className="text-sm font-medium text-ink">Dark mode</div>
+            <div className="text-xs text-slate-400">Easier on the eyes for evening work</div>
+          </div>
+        </div>
+        <button onClick={() => setDark(!dark)}
+          className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${dark ? 'bg-amber' : 'bg-line'}`}>
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${dark ? 'left-5' : 'left-0.5'}`} />
+        </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-8">

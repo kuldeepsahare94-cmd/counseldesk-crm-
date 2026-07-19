@@ -98,4 +98,76 @@ export const api = {
   deleteCustomField: (id) => req('DELETE', `/custom-fields/${id}`),
   getCustomValues: (entityType, recordId) => req('GET', `/custom-fields/values/${entityType}/${recordId}`),
   saveCustomValues: (entityType, recordId, values) => req('POST', `/custom-fields/values/${entityType}/${recordId}`, { values }),
+
+  // master data
+  listCountries: () => req('GET', '/master-data/countries'),
+  createCountry: (body) => req('POST', '/master-data/countries', body),
+  deleteCountry: (id) => req('DELETE', `/master-data/countries/${id}`),
+
+  listStates: (countryId) => req('GET', `/master-data/states${countryId ? `?country_id=${countryId}` : ''}`),
+  createState: (body) => req('POST', '/master-data/states', body),
+  deleteState: (id) => req('DELETE', `/master-data/states/${id}`),
+
+  listCities: (stateId) => req('GET', `/master-data/cities${stateId ? `?state_id=${stateId}` : ''}`),
+  createCity: (body) => req('POST', '/master-data/cities', body),
+  deleteCity: (id) => req('DELETE', `/master-data/cities/${id}`),
+
+  listUniversities: () => req('GET', '/master-data/universities'),
+  createUniversity: (body) => req('POST', '/master-data/universities', body),
+  updateUniversity: (id, body) => req('PUT', `/master-data/universities/${id}`, body),
+  deleteUniversity: (id) => req('DELETE', `/master-data/universities/${id}`),
+
+  listCourses: (universityId) => req('GET', `/master-data/courses${universityId ? `?university_id=${universityId}` : ''}`),
+  createCourse: (body) => req('POST', '/master-data/courses', body),
+  updateCourse: (id, body) => req('PUT', `/master-data/courses/${id}`, body),
+  deleteCourse: (id) => req('DELETE', `/master-data/courses/${id}`),
+
+  listIntakes: () => req('GET', '/master-data/intakes'),
+  createIntake: (body) => req('POST', '/master-data/intakes', body),
+  deleteIntake: (id) => req('DELETE', `/master-data/intakes/${id}`),
+
+  listOptions: (listType) => req('GET', `/master-data/options?list_type=${listType}`),
+  createOption: (body) => req('POST', '/master-data/options', body),
+  updateOption: (id, body) => req('PUT', `/master-data/options/${id}`, body),
+  deleteOption: (id) => req('DELETE', `/master-data/options/${id}`),
+
+  // applications
+  listApplications: (params) => {
+    const q = new URLSearchParams(params || {}).toString();
+    return req('GET', '/applications' + (q ? `?${q}` : ''));
+  },
+  getApplication: (id) => req('GET', `/applications/${id}`),
+  createApplication: (body) => req('POST', '/applications', body),
+  updateApplication: (id, body) => req('PUT', `/applications/${id}`, body),
+  deleteApplication: (id) => req('DELETE', `/applications/${id}`),
+  convertApplication: (id, body) => req('POST', `/applications/${id}/convert`, body),
+
+  // documents
+  listDocuments: (params) => {
+    const q = new URLSearchParams(params || {}).toString();
+    return req('GET', '/documents' + (q ? `?${q}` : ''));
+  },
+  createDocument: (body) => req('POST', '/documents', body),
+  updateDocument: (id, body) => req('PUT', `/documents/${id}`, body),
+  deleteDocument: (id) => req('DELETE', `/documents/${id}`),
+
+  // tasks
+  listTasks: (params) => {
+    const q = new URLSearchParams(params || {}).toString();
+    return req('GET', '/tasks' + (q ? `?${q}` : ''));
+  },
+  createTask: (body) => req('POST', '/tasks', body),
+  updateTask: (id, body) => req('PUT', `/tasks/${id}`, body),
+  deleteTask: (id) => req('DELETE', `/tasks/${id}`),
+
+  // payments
+  listPayments: (params) => {
+    const q = new URLSearchParams(params || {}).toString();
+    return req('GET', '/payments' + (q ? `?${q}` : ''));
+  },
+  createPayment: (body) => req('POST', '/payments', body),
+  deletePayment: (id) => req('DELETE', `/payments/${id}`),
+  paymentSummary: (enrollmentId) => req('GET', `/payments/enrollment/${enrollmentId}/summary`),
+
+  tasksSummary: () => req('GET', '/reports/tasks-summary'),
 };

@@ -17,6 +17,20 @@ const STYLES = {
   Planned: 'bg-sky-50 text-sky-700',
   Done: 'bg-emerald-100 text-good',
   Missed: 'bg-red-50 text-warn',
+  Low: 'bg-slate-100 text-slate-500',
+  Medium: 'bg-sky-50 text-sky-700',
+  High: 'bg-amber-soft text-amber',
+  Urgent: 'bg-red-50 text-warn',
+  Draft: 'bg-slate-100 text-slate-500',
+  Submitted: 'bg-sky-50 text-sky-700',
+  'Under Review': 'bg-amber-soft text-amber',
+  'Offer Received': 'bg-emerald-100 text-good',
+  Accepted: 'bg-emerald-100 text-good',
+  Withdrawn: 'bg-slate-100 text-slate-500',
+  Received: 'bg-sky-50 text-sky-700',
+  Verified: 'bg-emerald-100 text-good',
+  'To Do': 'bg-slate-100 text-slate-500',
+  'In Progress': 'bg-amber-soft text-amber',
 };
 
 export default function StatusBadge({ status }) {

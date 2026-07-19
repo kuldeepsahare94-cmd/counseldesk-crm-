@@ -2,20 +2,31 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 
-const empty = { name: '', type: 'College', city: '', commission_type: 'percentage', commission_value: '' };
+const empty = { name: '', type: 'College', city: '', commission_type: 'percentage', commission_value: '', university_id: '' };
 
 export default function Institutions() {
   const [list, setList] = useState([]);
+  const [universities, setUniversities] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(empty);
 
   const load = () => api.listInstitutions().then(setList);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.listUniversities().then(setUniversities); }, []);
+
+  const pickUniversity = (universityId) => {
+    const uni = universities.find((u) => String(u.id) === String(universityId));
+    setForm((f) => ({
+      ...f,
+      university_id: universityId,
+      name: uni && !f.name ? uni.name : f.name,
+      city: uni && !f.city ? (uni.city || '') : f.city,
+    }));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.createInstitution({ ...form, commission_value: Number(form.commission_value) || 0 });
+      await api.createInstitution({ ...form, commission_value: Number(form.commission_value) || 0, university_id: form.university_id || null });
       setForm(empty);
       setShowForm(false);
       load();
@@ -43,6 +54,11 @@ export default function Institutions() {
 
       {showForm && (
         <form onSubmit={submit} className="bg-white border border-line rounded-xl p-5 mt-5 grid grid-cols-2 gap-4">
+          <select className="border border-line rounded-lg px-3 py-2 text-sm col-span-2 bg-amber-soft"
+            value={form.university_id} onChange={(e) => pickUniversity(e.target.value)}>
+            <option value="">Link to a Master Data university (optional)…</option>
+            {universities.map((u) => <option key={u.id} value={u.id}>{u.name}{u.city ? ` — ${u.city}` : ''}</option>)}
+          </select>
           <input required placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
             value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <select className="border border-line rounded-lg px-3 py-2 text-sm"
@@ -82,6 +98,7 @@ export default function Institutions() {
               <tr key={inst.id} className="border-b border-line/60 hover:bg-canvas/60">
                 <td className="py-3 px-4">
                   <Link to={`/institutions/${inst.id}`} className="text-ink font-medium hover:text-amber">{inst.name}</Link>
+                  {inst.university_name && <div className="text-xs text-slate-400">↳ {inst.university_name}</div>}
                 </td>
                 <td className="py-3 px-4 text-slate-500">{inst.type}</td>
                 <td className="py-3 px-4 text-slate-500">{inst.city}</td>

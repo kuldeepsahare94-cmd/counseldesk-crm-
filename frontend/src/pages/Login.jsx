@@ -10,23 +10,22 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [status, setStatus] = useState('idle'); // idle | checking | success | error
+  const [lit, setLit] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    setStatus('checking');
+    setLit(true);        // light turns on immediately on click, no waiting animation
+    setSubmitting(true);
     try {
       const { token, user } = await api.login(username, password);
-      setStatus('success');
-      setTimeout(() => {
-        login(token, user);
-        navigate('/');
-      }, 550);
+      login(token, user);
+      navigate('/');      // straight in, no artificial delay
     } catch (err) {
-      setStatus('error');
+      setLit(false);
       setError(err.message);
-      setTimeout(() => setStatus('idle'), 1200);
+      setSubmitting(false);
     }
   };
 
@@ -41,17 +40,15 @@ export default function Login() {
       <div className="relative flex items-center gap-0 bg-transparent">
         {/* Mascot panel */}
         <div className="hidden sm:flex flex-col items-center justify-center w-56 py-10">
-          <LampMascot status={status} />
+          <LampMascot status={lit ? 'success' : 'idle'} />
           <p className="text-white/40 text-xs mt-4 text-center px-4">
-            {status === 'error' ? "That didn't work — try again." : status === 'success' ? 'Welcome back!' : 'Light up your CRM.'}
+            {lit ? 'Welcome back!' : 'Light up your CRM.'}
           </p>
         </div>
 
         {/* Card */}
         <form onSubmit={submit}
-          className={`w-full max-w-sm mx-4 bg-white/95 backdrop-blur rounded-2xl p-8 shadow-2xl transition-transform ${
-            status === 'error' ? 'animate-shake' : ''
-          }`}>
+          className="w-full max-w-sm mx-4 bg-white/95 backdrop-blur rounded-2xl p-8 shadow-2xl">
           <h1 className="font-display text-2xl font-semibold text-ink text-center" style={{ fontFamily: 'var(--font-display)' }}>
             Welcome Back
           </h1>
@@ -69,10 +66,10 @@ export default function Login() {
 
           {error && <p className="text-warn text-xs mt-2">{error}</p>}
 
-          <button type="submit" disabled={status === 'checking'}
+          <button type="submit" disabled={submitting}
             className="w-full text-white text-sm font-semibold py-2.5 rounded-lg mt-5 transition-colors disabled:opacity-60"
             style={{ background: 'linear-gradient(135deg, #A855F7, #7C3AED)' }}>
-            {status === 'checking' ? 'Checking…' : 'Login'}
+            Login
           </button>
 
           <p className="text-center mt-4">
@@ -83,17 +80,6 @@ export default function Login() {
           </p>
         </form>
       </div>
-
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-6px); }
-          40% { transform: translateX(6px); }
-          60% { transform: translateX(-4px); }
-          80% { transform: translateX(4px); }
-        }
-        .animate-shake { animation: shake 0.4s ease; }
-      `}</style>
     </div>
   );
 }

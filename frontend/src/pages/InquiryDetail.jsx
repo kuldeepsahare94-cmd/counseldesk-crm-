@@ -21,6 +21,13 @@ export default function InquiryDetail() {
   const [callForm, setCallForm] = useState({ disposition: '', remark: '', scheduled_at: '' });
   const [completingId, setCompletingId] = useState(null);
   const [completeForm, setCompleteForm] = useState({ disposition: '', remark: '' });
+  const [leadSources, setLeadSources] = useState([]);
+  const [priorities, setPriorities] = useState([]);
+
+  useEffect(() => {
+    api.listOptions('lead_source').then(setLeadSources);
+    api.listOptions('priority').then(setPriorities);
+  }, []);
 
   const load = () => {
     api.getInquiry(id).then((inq) => { setInquiry(inq); setForm(inq); });
@@ -138,6 +145,7 @@ export default function InquiryDetail() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={inquiry.status} />
+          {inquiry.priority && <StatusBadge status={inquiry.priority} />}
           <button onClick={() => { setForm(inquiry); setEditing((s) => !s); }}
             className="border border-line text-sm font-medium px-4 py-2 rounded-lg text-ink hover:bg-canvas">
             {editing ? 'Cancel' : 'Edit'}
@@ -160,10 +168,18 @@ export default function InquiryDetail() {
             value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input placeholder="Course interest" className="border border-line rounded-lg px-3 py-2 text-sm"
             value={form.course_interest || ''} onChange={(e) => setForm({ ...form, course_interest: e.target.value })} />
-          <input placeholder="Source" className="border border-line rounded-lg px-3 py-2 text-sm"
-            value={form.source || ''} onChange={(e) => setForm({ ...form, source: e.target.value })} />
+          <select className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.source || ''} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+            <option value="">Source…</option>
+            {leadSources.filter((s) => s.active).map((s) => <option key={s.id} value={s.label}>{s.label}</option>)}
+          </select>
           <input placeholder="Counselor" className="border border-line rounded-lg px-3 py-2 text-sm"
             value={form.counselor || ''} onChange={(e) => setForm({ ...form, counselor: e.target.value })} />
+          <select className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.priority || ''} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+            <option value="">Priority…</option>
+            {priorities.filter((p) => p.active).map((p) => <option key={p.id} value={p.label}>{p.label}</option>)}
+          </select>
           <select className="border border-line rounded-lg px-3 py-2 text-sm"
             value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
             <option>New</option><option>In Counseling</option><option>Converted</option><option>Dropped</option>

@@ -18,3 +18,42 @@ body {
   color: var(--color-ink);
   font-family: var(--font-body);
 }
+
+/* ===== Dark mode =====
+   Applied via a .dark-mode class on <html>, toggled from Appearance settings.
+   Cards/surfaces use bg-white and text-slate-* utilities throughout the app;
+   these overrides remap them to dark-appropriate values without needing to
+   touch every component. */
+html.dark-mode {
+  --color-canvas: #14161C;
+  --color-line: #2A2D36;
+}
+html.dark-mode body {
+  background: var(--color-canvas);
+  color: #E7E7EA;
+}
+html.dark-mode .bg-white {
+  background-color: #1D2027 !important;
+  color: #E7E7EA;
+}
+html.dark-mode .text-ink {
+  color: #F1F1F3 !important;
+}
+html.dark-mode .text-slate-400 { color: #7A7E8C !important; }
+html.dark-mode .text-slate-500 { color: #9498A6 !important; }
+html.dark-mode .text-slate-600 { color: #AAB0C0 !important; }
+html.dark-mode .bg-canvas\/60:hover,
+html.dark-mode .hover\:bg-canvas:hover,
+html.dark-mode .bg-canvas\/40,
+html.dark-mode .bg-canvas\/30 {
+  background-color: #23262F !important;
+}
+html.dark-mode input,
+html.dark-mode select,
+html.dark-mode textarea {
+  background-color: #1D2027;
+  color: #E7E7EA;
+}
+html.dark-mode ::placeholder {
+  color: #6B6F7B;
+}

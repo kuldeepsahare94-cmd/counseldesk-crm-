@@ -43,18 +43,29 @@ function applyTheme(key) {
   root.setProperty('--color-warn', t.warn);
 }
 
+function applyDark(on) {
+  document.documentElement.classList.toggle('dark-mode', on);
+}
+
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => localStorage.getItem('cd_theme') || 'amber');
+  const [dark, setDarkState] = useState(() => localStorage.getItem('cd_dark') === '1');
 
   useEffect(() => { applyTheme(theme); }, [theme]);
+  useEffect(() => { applyDark(dark); }, [dark]);
 
   const setTheme = (key) => {
     localStorage.setItem('cd_theme', key);
     setThemeState(key);
   };
 
+  const setDark = (on) => {
+    localStorage.setItem('cd_dark', on ? '1' : '0');
+    setDarkState(on);
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, dark, setDark }}>
       {children}
     </ThemeContext.Provider>
   );

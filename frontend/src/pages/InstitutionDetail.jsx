@@ -8,6 +8,7 @@ export default function InstitutionDetail() {
   const { id } = useParams();
   const [inst, setInst] = useState(null);
   const [counselings, setCounselings] = useState([]);
+  const [universities, setUniversities] = useState([]);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
 
@@ -15,14 +16,14 @@ export default function InstitutionDetail() {
     api.getInstitution(id).then((i) => { setInst(i); setForm(i); });
     api.institutionCounselings(id).then(setCounselings);
   };
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); api.listUniversities().then(setUniversities); }, [id]);
 
   if (!inst) return <div className="p-8 text-slate-400">Loading…</div>;
 
   const saveEdit = async (e) => {
     e.preventDefault();
     try {
-      await api.updateInstitution(id, { ...form, commission_value: Number(form.commission_value) || 0 });
+      await api.updateInstitution(id, { ...form, commission_value: Number(form.commission_value) || 0, university_id: form.university_id || null });
       setEditing(false);
       load();
     } catch (err) {
@@ -42,6 +43,9 @@ export default function InstitutionDetail() {
             {inst.type} · {inst.city || 'City not set'} ·{' '}
             {inst.commission_type === 'flat' ? `₹${inst.commission_value} flat` : `${inst.commission_value}% commission`}
           </p>
+          {inst.university_name && (
+            <p className="text-xs text-amber mt-1">↳ Linked to Master Data: {inst.university_name}</p>
+          )}
         </div>
         <button onClick={() => { setForm(inst); setEditing((s) => !s); }}
           className="bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink-light">
@@ -51,6 +55,11 @@ export default function InstitutionDetail() {
 
       {editing && (
         <form onSubmit={saveEdit} className="bg-white border border-line rounded-xl p-5 mt-5 grid grid-cols-2 gap-4">
+          <select className="border border-line rounded-lg px-3 py-2 text-sm col-span-2 bg-amber-soft"
+            value={form.university_id || ''} onChange={(e) => setForm({ ...form, university_id: e.target.value })}>
+            <option value="">No Master Data link</option>
+            {universities.map((u) => <option key={u.id} value={u.id}>{u.name}{u.city ? ` — ${u.city}` : ''}</option>)}
+          </select>
           <input required placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
             value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <select className="border border-line rounded-lg px-3 py-2 text-sm"

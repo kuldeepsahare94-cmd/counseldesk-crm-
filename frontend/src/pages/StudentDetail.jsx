@@ -3,6 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 import CustomFieldsPanel from '../components/CustomFieldsPanel';
+import DocumentsChecklist from '../components/DocumentsChecklist';
+import PaymentHistory from '../components/PaymentHistory';
+import ActivityTimeline from '../components/ActivityTimeline';
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
@@ -11,19 +14,43 @@ export default function StudentDetail() {
   const [student, setStudent] = useState(null);
   const [institutions, setInstitutions] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ institution_id: '', course: '', fee_total: '', payment_status: 'Pending' });
+  const [form, setForm] = useState({ institution_id: '', course: '', course_id: '', fee_total: '', payment_status: 'Pending' });
+  const [catalogCourses, setCatalogCourses] = useState([]);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [editingEnrollment, setEditingEnrollment] = useState(null);
   const [enrollForm, setEnrollForm] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [paymentsOpen, setPaymentsOpen] = useState(null);
 
   const load = () => {
     api.getStudent(id).then((s) => { setStudent(s); setEditForm(s); });
     api.listInstitutions().then(setInstitutions);
+    api.listApplications({ student_id: id }).then(setApplications);
   };
   useEffect(() => { load(); }, [id]);
 
   if (!student) return <div className="p-8 text-slate-400">Loading…</div>;
+
+  const pickInstitution = (institutionId) => {
+    setForm((f) => ({ ...f, institution_id: institutionId, course_id: '', course: '' }));
+    const inst = institutions.find((i) => String(i.id) === String(institutionId));
+    if (inst && inst.university_id) {
+      api.listCourses(inst.university_id).then(setCatalogCourses);
+    } else {
+      setCatalogCourses([]);
+    }
+  };
+
+  const pickCourse = (courseId) => {
+    const c = catalogCourses.find((x) => String(x.id) === String(courseId));
+    setForm((f) => ({
+      ...f,
+      course_id: courseId,
+      course: c ? c.name : f.course,
+      fee_total: c && c.tuition_fee ? c.tuition_fee : f.fee_total,
+    }));
+  };
 
   const submitEnrollment = async (e) => {
     e.preventDefault();
@@ -32,10 +59,12 @@ export default function StudentDetail() {
         student_id: Number(id),
         institution_id: Number(form.institution_id),
         course: form.course,
+        course_id: form.course_id || null,
         fee_total: Number(form.fee_total) || 0,
         payment_status: form.payment_status,
       });
-      setForm({ institution_id: '', course: '', fee_total: '', payment_status: 'Pending' });
+      setForm({ institution_id: '', course: '', course_id: '', fee_total: '', payment_status: 'Pending' });
+      setCatalogCourses([]);
       setShowForm(false);
       load();
     } catch (err) {
@@ -109,8 +138,38 @@ export default function StudentDetail() {
         </form>
       )}
 
+      <div className="mt-6">
+        <ActivityTimeline counselingHistory={student.counseling_history} applications={applications} enrollments={student.enrollments} />
+      </div>
+
       <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Custom fields</h2>
       <CustomFieldsPanel entityType="student" recordId={student.id} />
+
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Applications</h2>
+      <div className="bg-white border border-line rounded-xl overflow-hidden">
+        {applications.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No applications yet. <Link to="/applications" className="text-amber hover:underline">Start one</Link>.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {applications.map((a) => (
+                <tr key={a.id} className="border-b border-line/60 last:border-0">
+                  <td className="py-2.5 px-4 text-slate-400 text-xs font-mono">{a.application_number}</td>
+                  <td className="py-2.5 px-4 text-ink font-medium">{a.institution_name}</td>
+                  <td className="py-2.5 px-4 text-slate-500">{a.course_name || a.course || '—'}</td>
+                  <td className="py-2.5 px-4"><StatusBadge status={a.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="px-4 py-2 border-t border-line">
+          <Link to="/applications" className="text-xs text-amber hover:underline">Manage applications →</Link>
+        </div>
+      </div>
+
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Documents</h2>
+      <DocumentsChecklist studentId={student.id} />
 
       <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Counseling history</h2>
       <div className="bg-white border border-line rounded-xl p-4">
@@ -137,7 +196,7 @@ export default function StudentDetail() {
 
       {showForm && (
         <form onSubmit={submitEnrollment} className="bg-white border border-line rounded-xl p-5 grid grid-cols-2 gap-4 mb-4">
-          <select required value={form.institution_id} onChange={(e) => setForm({ ...form, institution_id: e.target.value })}
+          <select required value={form.institution_id} onChange={(e) => pickInstitution(e.target.value)}
             className="border border-line rounded-lg px-3 py-2 text-sm col-span-2">
             <option value="">Select institution…</option>
             {institutions.map((i) => (
@@ -146,6 +205,15 @@ export default function StudentDetail() {
               </option>
             ))}
           </select>
+          {catalogCourses.length > 0 && (
+            <select value={form.course_id} onChange={(e) => pickCourse(e.target.value)}
+              className="border border-line rounded-lg px-3 py-2 text-sm col-span-2 bg-amber-soft">
+              <option value="">Pick from course catalog (optional)…</option>
+              {catalogCourses.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} · {c.level} · {c.currency} {c.tuition_fee}</option>
+              ))}
+            </select>
+          )}
           <input placeholder="Course" className="border border-line rounded-lg px-3 py-2 text-sm"
             value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} />
           <input placeholder="Total fee (₹)" type="number" className="border border-line rounded-lg px-3 py-2 text-sm"
@@ -219,7 +287,10 @@ export default function StudentDetail() {
                     </select>
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <button onClick={() => startEditEnrollment(en)} className="text-xs text-ink hover:underline">Edit</button>
+                    <button onClick={() => startEditEnrollment(en)} className="text-xs text-ink hover:underline mr-2">Edit</button>
+                    <button onClick={() => setPaymentsOpen(paymentsOpen === en.id ? null : en.id)} className="text-xs text-amber hover:underline">
+                      {paymentsOpen === en.id ? 'Hide' : 'Payments'}
+                    </button>
                   </td>
                 </tr>
               )
@@ -229,6 +300,11 @@ export default function StudentDetail() {
             )}
           </tbody>
         </table>
+        {student.enrollments.filter((en) => paymentsOpen === en.id).map((en) => (
+          <div key={en.id} className="border-t border-line p-3">
+            <PaymentHistory enrollmentId={en.id} />
+          </div>
+        ))}
       </div>
     </div>
   );
