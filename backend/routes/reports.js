@@ -90,4 +90,19 @@ router.get('/followups-summary', (req, res) => {
   res.json({ planned_today: plannedToday, done_today: doneToday, overdue, total_planned: totalPlanned });
 });
 
+// Task tracking summary for the dashboard
+router.get('/tasks-summary', (req, res) => {
+  const dueToday = db.prepare(`
+    SELECT COUNT(*) c FROM tasks WHERE status != 'Done' AND date(due_date) = date('now')
+  `).get().c;
+  const overdue = db.prepare(`
+    SELECT COUNT(*) c FROM tasks WHERE status != 'Done' AND due_date IS NOT NULL AND datetime(due_date) < datetime('now')
+  `).get().c;
+  const doneToday = db.prepare(`
+    SELECT COUNT(*) c FROM tasks WHERE status='Done' AND date(completed_at) = date('now')
+  `).get().c;
+  const pendingDocs = db.prepare(`SELECT COUNT(*) c FROM documents WHERE status='Pending'`).get().c;
+  res.json({ due_today: dueToday, overdue, done_today: doneToday, pending_documents: pendingDocs });
+});
+
 module.exports = router;

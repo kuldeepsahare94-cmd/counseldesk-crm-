@@ -39,12 +39,12 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, phone, email, course_interest, source, counselor } = req.body;
+  const { name, phone, email, course_interest, source, counselor, priority } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   const info = db.prepare(`
-    INSERT INTO inquiries (name, phone, email, course_interest, source, counselor)
-    VALUES (?,?,?,?,?,?)
-  `).run(name, phone || null, email || null, course_interest || null, source || null, counselor || null);
+    INSERT INTO inquiries (name, phone, email, course_interest, source, counselor, priority)
+    VALUES (?,?,?,?,?,?,?)
+  `).run(name, phone || null, email || null, course_interest || null, source || null, counselor || null, priority || null);
   res.status(201).json(db.prepare('SELECT * FROM inquiries WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -53,9 +53,9 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const m = { ...existing, ...req.body };
   db.prepare(`
-    UPDATE inquiries SET name=?, phone=?, email=?, course_interest=?, source=?, status=?, counselor=?
+    UPDATE inquiries SET name=?, phone=?, email=?, course_interest=?, source=?, status=?, counselor=?, priority=?
     WHERE id=?
-  `).run(m.name, m.phone, m.email, m.course_interest, m.source, m.status, m.counselor, req.params.id);
+  `).run(m.name, m.phone, m.email, m.course_interest, m.source, m.status, m.counselor, m.priority, req.params.id);
   res.json(db.prepare('SELECT * FROM inquiries WHERE id = ?').get(req.params.id));
 });
 

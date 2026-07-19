@@ -20,11 +20,18 @@ router.get('/', (req, res) => {
 
 // Onboard a student into their chosen institution
 router.post('/', (req, res) => {
-  const { student_id, institution_id, course, fee_total, commission_type, commission_value, payment_status } = req.body;
+  const { student_id, institution_id, course, course_id, fee_total, commission_type, commission_value, payment_status } = req.body;
   if (!student_id || !institution_id) return res.status(400).json({ error: 'student_id and institution_id are required' });
 
   const institution = db.prepare('SELECT * FROM institutions WHERE id = ?').get(institution_id);
   if (!institution) return res.status(404).json({ error: 'Institution not found' });
+
+  // If a catalog course was picked, use its name unless the user typed something specific
+  let courseName = course || null;
+  if (course_id && !courseName) {
+    const c = db.prepare('SELECT * FROM courses WHERE id=?').get(course_id);
+    if (c) courseName = c.name;
+  }
 
   // default to institution's own commission terms unless overridden
   const cType = commission_type || institution.commission_type;
@@ -32,9 +39,9 @@ router.post('/', (req, res) => {
   const commission_amount = computeCommission(fee_total || 0, cType, cValue);
 
   const info = db.prepare(`
-    INSERT INTO enrollments (student_id, institution_id, course, fee_total, commission_type, commission_value, commission_amount, payment_status)
-    VALUES (?,?,?,?,?,?,?,?)
-  `).run(student_id, institution_id, course || null, fee_total || 0, cType, cValue, commission_amount, payment_status || 'Pending');
+    INSERT INTO enrollments (student_id, institution_id, course, course_id, fee_total, commission_type, commission_value, commission_amount, payment_status)
+    VALUES (?,?,?,?,?,?,?,?,?)
+  `).run(student_id, institution_id, courseName, course_id || null, fee_total || 0, cType, cValue, commission_amount, payment_status || 'Pending');
 
   res.status(201).json(db.prepare('SELECT * FROM enrollments WHERE id = ?').get(info.lastInsertRowid));
 });
@@ -45,9 +52,9 @@ router.put('/:id', (req, res) => {
   const m = { ...existing, ...req.body };
   const commission_amount = computeCommission(m.fee_total, m.commission_type, m.commission_value);
   db.prepare(`
-    UPDATE enrollments SET course=?, fee_total=?, commission_type=?, commission_value=?, commission_amount=?, payment_status=?, status=?
+    UPDATE enrollments SET course=?, course_id=?, fee_total=?, commission_type=?, commission_value=?, commission_amount=?, payment_status=?, status=?
     WHERE id=?
-  `).run(m.course, m.fee_total, m.commission_type, m.commission_value, commission_amount, m.payment_status, m.status, req.params.id);
+  `).run(m.course, m.course_id || null, m.fee_total, m.commission_type, m.commission_value, commission_amount, m.payment_status, m.status, req.params.id);
   res.json(db.prepare('SELECT * FROM enrollments WHERE id = ?').get(req.params.id));
 });
 

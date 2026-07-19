@@ -19,6 +19,11 @@ app.use('/api/enrollments', requireAuth, require('./routes/enrollments'));
 app.use('/api/reports', requireAuth, require('./routes/reports'));
 app.use('/api/custom-fields', requireAuth, require('./routes/customFields'));
 app.use('/api/followups', requireAuth, require('./routes/followups'));
+app.use('/api/master-data', requireAuth, require('./routes/masterData'));
+app.use('/api/applications', requireAuth, require('./routes/applications'));
+app.use('/api/documents', requireAuth, require('./routes/documents'));
+app.use('/api/tasks', requireAuth, require('./routes/tasks'));
+app.use('/api/payments', requireAuth, require('./routes/payments'));
 app.use('/api/users', requireAuth, require('./routes/users'));
 
 const PORT = process.env.PORT || 4000;
