@@ -302,6 +302,40 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_enrollment ON payments(enrollment_id);
 `);
 
+// ===== Notification Center =====
+// Notifications themselves aren't stored — they're computed live from
+// existing data (follow-ups, applications, payments, documents) so they're
+// always accurate. This table only tracks which ones have been read.
+db.exec(`
+CREATE TABLE IF NOT EXISTS notification_reads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  notification_key TEXT NOT NULL UNIQUE,
+  read_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
+// Student profile fields relevant to a study-abroad consultancy — additive,
+// nullable, safe on top of existing student records.
+const studentCols = db.prepare("PRAGMA table_info(students)").all().map((c) => c.name);
+const addStudentCol = (col, def) => {
+  if (!studentCols.includes(col)) {
+    try { db.exec(`ALTER TABLE students ADD COLUMN ${col} ${def}`); } catch (e) { /* ignore */ }
+  }
+};
+addStudentCol('date_of_birth', 'TEXT');
+addStudentCol('gender', 'TEXT');
+addStudentCol('address', 'TEXT');
+addStudentCol('city', 'TEXT');
+addStudentCol('country_id', 'INTEGER REFERENCES countries(id)');
+addStudentCol('passport_number', 'TEXT');
+addStudentCol('highest_qualification', 'TEXT');
+addStudentCol('academic_percentage', 'TEXT');
+addStudentCol('english_test', 'TEXT');
+addStudentCol('english_test_score', 'TEXT');
+addStudentCol('alternate_phone', 'TEXT');
+addStudentCol('guardian_name', 'TEXT');
+addStudentCol('guardian_phone', 'TEXT');
+
 db.exec(`CREATE INDEX IF NOT EXISTS idx_followup_status ON followups(status);
 CREATE INDEX IF NOT EXISTS idx_followup_scheduled ON followups(scheduled_at);`);
 

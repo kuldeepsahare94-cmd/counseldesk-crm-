@@ -24,6 +24,7 @@ app.use('/api/applications', requireAuth, require('./routes/applications'));
 app.use('/api/documents', requireAuth, require('./routes/documents'));
 app.use('/api/tasks', requireAuth, require('./routes/tasks'));
 app.use('/api/payments', requireAuth, require('./routes/payments'));
+app.use('/api/notifications', requireAuth, require('./routes/notifications'));
 app.use('/api/users', requireAuth, require('./routes/users'));
 
 const PORT = process.env.PORT || 4000;

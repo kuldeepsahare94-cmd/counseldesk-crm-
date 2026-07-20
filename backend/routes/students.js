@@ -12,7 +12,11 @@ router.get('/', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const student = db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
+  const student = db.prepare(`
+    SELECT s.*, c.name AS country_name FROM students s
+    LEFT JOIN countries c ON c.id = s.country_id
+    WHERE s.id = ?
+  `).get(req.params.id);
   if (!student) return res.status(404).json({ error: 'Not found' });
   const enrollments = db.prepare(`
     SELECT en.*, inst.name AS institution_name
@@ -32,7 +36,18 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const m = { ...existing, ...req.body };
-  db.prepare('UPDATE students SET name=?, phone=?, email=? WHERE id=?').run(m.name, m.phone, m.email, req.params.id);
+  db.prepare(`
+    UPDATE students SET
+      name=?, phone=?, email=?, date_of_birth=?, gender=?, address=?, city=?, country_id=?,
+      passport_number=?, highest_qualification=?, academic_percentage=?, english_test=?, english_test_score=?,
+      alternate_phone=?, guardian_name=?, guardian_phone=?
+    WHERE id=?
+  `).run(
+    m.name, m.phone, m.email, m.date_of_birth || null, m.gender || null, m.address || null, m.city || null, m.country_id || null,
+    m.passport_number || null, m.highest_qualification || null, m.academic_percentage || null, m.english_test || null, m.english_test_score || null,
+    m.alternate_phone || null, m.guardian_name || null, m.guardian_phone || null,
+    req.params.id
+  );
   res.json(db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id));
 });
 
