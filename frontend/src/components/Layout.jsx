@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users as UsersIcon, Building2, GraduationCap, Settings as SettingsIcon, LogOut, UserCog, PhoneCall, BarChart3, Palette, Database, FileText, CheckSquare, Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import GlobalSearch from './GlobalSearch';
+import NotificationBell from './NotificationBell';
 
 const links = [
   { to: '/', label: 'Dashboard', end: true, icon: LayoutDashboard },
@@ -112,6 +113,7 @@ export default function Layout() {
               <Menu className="w-5 h-5" />
             </button>
             <GlobalSearch />
+            <NotificationBell />
           </div>
 
           <main className="bg-canvas min-h-[calc(100vh-57px)] pb-16 md:pb-0">

@@ -39,7 +39,19 @@ export default function Inquiries() {
     const id = e.dataTransfer.getData('text/plain');
     if (!id) return;
     try {
-      await api.updateInquiry(id, { status });
+      if (status === 'Converted') {
+        // Dropping into Converted must actually run the conversion (creates
+        // the Student record) — just relabeling the status text left no
+        // student behind, which was the bug.
+        try {
+          await api.convertInquiry(id);
+        } catch (err) {
+          // Already converted earlier is fine — just make sure status reflects it.
+          if (!err.message.includes('Already converted')) throw err;
+        }
+      } else {
+        await api.updateInquiry(id, { status });
+      }
       load();
     } catch (err) {
       alert('Could not move: ' + err.message);

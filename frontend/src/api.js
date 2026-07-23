@@ -170,4 +170,9 @@ export const api = {
   paymentSummary: (enrollmentId) => req('GET', `/payments/enrollment/${enrollmentId}/summary`),
 
   tasksSummary: () => req('GET', '/reports/tasks-summary'),
+
+  // notifications
+  listNotifications: () => req('GET', '/notifications'),
+  markNotificationRead: (key) => req('POST', `/notifications/${key}/read`),
+  markAllNotificationsRead: () => req('POST', '/notifications/read-all'),
 };

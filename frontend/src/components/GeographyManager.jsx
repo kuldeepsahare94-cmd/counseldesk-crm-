@@ -2,6 +2,41 @@ import { useEffect, useState } from 'react';
 import { Trash2, Plus } from 'lucide-react';
 import { api } from '../api';
 
+// Hoisted OUTSIDE GeographyManager on purpose: defining a component inside
+// another component's render body creates a brand-new function reference
+// every re-render, which makes React treat it as a different component type
+// and remount the whole subtree — including input fields, which lose focus
+// after every keystroke. Keeping it top-level fixes that.
+function Column({ title, items, selected, onSelect, onAdd, addValue, setAddValue, onDelete, empty, disabled }) {
+  return (
+    <div className="flex-1 min-w-0">
+      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{title}</h3>
+      {!disabled && (
+        <form onSubmit={onAdd} className="flex gap-1.5 mb-2">
+          <input value={addValue} onChange={(e) => setAddValue(e.target.value)} placeholder="Add…"
+            className="border border-line rounded-lg px-2.5 py-1.5 text-xs flex-1 min-w-0" />
+          <button type="submit" className="bg-ink text-white p-1.5 rounded-lg shrink-0"><Plus className="w-3.5 h-3.5" /></button>
+        </form>
+      )}
+      <div className="bg-white border border-line rounded-xl overflow-hidden max-h-80 overflow-y-auto">
+        {items.map((item) => (
+          <div key={item.id}
+            onClick={() => onSelect && onSelect(item)}
+            className={`px-3 py-2 text-sm flex items-center justify-between border-b border-line/60 last:border-0 ${
+              onSelect ? 'cursor-pointer' : ''
+            } ${selected?.id === item.id ? 'bg-amber-soft text-ink font-medium' : 'text-ink hover:bg-canvas'}`}>
+            <span className="truncate">{item.name}</span>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(item); }} className="text-slate-300 hover:text-warn shrink-0 ml-2">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+        {items.length === 0 && <div className="px-3 py-6 text-center text-slate-400 text-xs">{empty}</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function GeographyManager() {
   const [countries, setCountries] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState(null);
@@ -71,34 +106,6 @@ export default function GeographyManager() {
     await api.deleteCity(c.id);
     api.listCities(selectedState.id).then(setCities);
   };
-
-  const Column = ({ title, items, selected, onSelect, onAdd, addValue, setAddValue, onDelete, empty, disabled }) => (
-    <div className="flex-1 min-w-0">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{title}</h3>
-      {!disabled && (
-        <form onSubmit={onAdd} className="flex gap-1.5 mb-2">
-          <input value={addValue} onChange={(e) => setAddValue(e.target.value)} placeholder="Add…"
-            className="border border-line rounded-lg px-2.5 py-1.5 text-xs flex-1 min-w-0" />
-          <button type="submit" className="bg-ink text-white p-1.5 rounded-lg shrink-0"><Plus className="w-3.5 h-3.5" /></button>
-        </form>
-      )}
-      <div className="bg-white border border-line rounded-xl overflow-hidden max-h-80 overflow-y-auto">
-        {items.map((item) => (
-          <div key={item.id}
-            onClick={() => onSelect && onSelect(item)}
-            className={`px-3 py-2 text-sm flex items-center justify-between border-b border-line/60 last:border-0 ${
-              onSelect ? 'cursor-pointer' : ''
-            } ${selected?.id === item.id ? 'bg-amber-soft text-ink font-medium' : 'text-ink hover:bg-canvas'}`}>
-            <span className="truncate">{item.name}</span>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(item); }} className="text-slate-300 hover:text-warn shrink-0 ml-2">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ))}
-        {items.length === 0 && <div className="px-3 py-6 text-center text-slate-400 text-xs">{empty}</div>}
-      </div>
-    </div>
-  );
 
   return (
     <div className="flex gap-4">

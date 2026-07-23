@@ -22,6 +22,13 @@ export default function StudentDetail() {
   const [enrollForm, setEnrollForm] = useState(null);
   const [applications, setApplications] = useState([]);
   const [paymentsOpen, setPaymentsOpen] = useState(null);
+  const [countries, setCountries] = useState([]);
+  const [englishTests, setEnglishTests] = useState([]);
+
+  useEffect(() => {
+    api.listCountries().then(setCountries);
+    api.listOptions('english_test').then(setEnglishTests);
+  }, []);
 
   const load = () => {
     api.getStudent(id).then((s) => { setStudent(s); setEditForm(s); });
@@ -117,6 +124,16 @@ export default function StudentDetail() {
             {student.name}
           </h1>
           <p className="text-sm text-slate-500 mt-1">{student.phone} {student.email && `· ${student.email}`}</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {[
+              student.date_of_birth && `DOB: ${student.date_of_birth}`,
+              student.gender,
+              student.passport_number && `Passport: ${student.passport_number}`,
+              student.country_name && `${student.city ? student.city + ', ' : ''}${student.country_name}`,
+              student.highest_qualification,
+              student.english_test && `${student.english_test}${student.english_test_score ? ' - ' + student.english_test_score : ''}`,
+            ].filter(Boolean).join(' · ') || 'No profile details yet — click Edit to add them.'}
+          </p>
         </div>
         <button onClick={() => { setEditForm(student); setEditing((s) => !s); }}
           className="bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink-light">
@@ -125,14 +142,73 @@ export default function StudentDetail() {
       </div>
 
       {editing && (
-        <form onSubmit={saveStudentEdit} className="bg-white border border-line rounded-xl p-5 mt-4 grid grid-cols-2 gap-4">
-          <input required placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
-            value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
-          <input placeholder="Phone" className="border border-line rounded-lg px-3 py-2 text-sm"
-            value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
-          <input placeholder="Email" className="border border-line rounded-lg px-3 py-2 text-sm"
-            value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
-          <button type="submit" className="col-span-2 bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">
+        <form onSubmit={saveStudentEdit} className="bg-white border border-line rounded-xl p-5 mt-4 space-y-4">
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Basic details</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input required placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+                value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              <input placeholder="Phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+              <input placeholder="Alternate phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.alternate_phone || ''} onChange={(e) => setEditForm({ ...editForm, alternate_phone: e.target.value })} />
+              <input placeholder="Email" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+              <input type="date" placeholder="Date of birth" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.date_of_birth || ''} onChange={(e) => setEditForm({ ...editForm, date_of_birth: e.target.value })} />
+              <select className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.gender || ''} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                <option value="">Gender…</option>
+                <option>Male</option><option>Female</option><option>Other</option>
+              </select>
+              <input placeholder="Passport number" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.passport_number || ''} onChange={(e) => setEditForm({ ...editForm, passport_number: e.target.value })} />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Address</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Address" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+                value={editForm.address || ''} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+              <input placeholder="City" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.city || ''} onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} />
+              <select className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.country_id || ''} onChange={(e) => setEditForm({ ...editForm, country_id: e.target.value })}>
+                <option value="">Country…</option>
+                {countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Academic profile</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Highest qualification" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.highest_qualification || ''} onChange={(e) => setEditForm({ ...editForm, highest_qualification: e.target.value })} />
+              <input placeholder="Academic % / GPA" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.academic_percentage || ''} onChange={(e) => setEditForm({ ...editForm, academic_percentage: e.target.value })} />
+              <select className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.english_test || ''} onChange={(e) => setEditForm({ ...editForm, english_test: e.target.value })}>
+                <option value="">English test…</option>
+                {englishTests.filter((t) => t.active).map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
+              </select>
+              <input placeholder="Test score" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.english_test_score || ''} onChange={(e) => setEditForm({ ...editForm, english_test_score: e.target.value })} />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Guardian / emergency contact</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Guardian name" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.guardian_name || ''} onChange={(e) => setEditForm({ ...editForm, guardian_name: e.target.value })} />
+              <input placeholder="Guardian phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.guardian_phone || ''} onChange={(e) => setEditForm({ ...editForm, guardian_phone: e.target.value })} />
+            </div>
+          </div>
+
+          <button type="submit" className="w-full bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">
             Save changes
           </button>
         </form>
