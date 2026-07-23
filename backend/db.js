@@ -369,4 +369,14 @@ for (const [listType, labels] of Object.entries(seedOptions)) {
   }
 }
 
+// Opt-in demo data — only runs when SEED_DEMO_DATA=true is set as an env var,
+// and only if there's no data yet (see seedDemo.js for full safety notes).
+if (process.env.SEED_DEMO_DATA === 'true') {
+  try {
+    require('./seedDemo').seedDemoData(db);
+  } catch (e) {
+    console.error('Demo seed failed:', e.message);
+  }
+}
+
 module.exports = db;
