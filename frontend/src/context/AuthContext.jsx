@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { api } from '../api';
 
 const AuthContext = createContext(null);
 
@@ -21,6 +22,19 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('cd_user');
     setToken(null);
     setUser(null);
+  }, []);
+
+  // Re-hydrate permissions from the server on every page load — covers the case
+  // where an admin changed this user's role/permissions in a previous session.
+  useEffect(() => {
+    if (!token) return;
+    api.me().then((res) => {
+      if (res?.user) {
+        localStorage.setItem('cd_user', JSON.stringify(res.user));
+        setUser(res.user);
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

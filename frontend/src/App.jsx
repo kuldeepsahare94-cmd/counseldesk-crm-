@@ -5,20 +5,27 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Inquiries from './pages/Inquiries';
-import InquiryDetail from './pages/InquiryDetail';
-import FollowUps from './pages/FollowUps';
-import Tasks from './pages/Tasks';
-import Institutions from './pages/Institutions';
-import InstitutionDetail from './pages/InstitutionDetail';
+import Leads from './pages/Leads';
+import LeadDetail from './pages/LeadDetail';
 import Students from './pages/Students';
 import StudentDetail from './pages/StudentDetail';
-import Applications from './pages/Applications';
-import Settings from './pages/Settings';
-import Users from './pages/Users';
+import Courses from './pages/Courses';
+import Admissions from './pages/Admissions';
+import AdmissionDetail from './pages/AdmissionDetail';
+import Payments from './pages/Payments';
+import Companies from './pages/Companies';
+import CompanyDetail from './pages/CompanyDetail';
+import Placements from './pages/Placements';
 import Reports from './pages/Reports';
-import MasterData from './pages/MasterData';
+import Roles from './pages/Roles';
+import Users from './pages/Users';
+import Settings from './pages/Settings';
 import Appearance from './pages/Appearance';
+import WhatsAppIntegrations from './pages/WhatsAppIntegrations';
+import WhatsAppTemplates from './pages/WhatsAppTemplates';
+import WhatsAppWorkflows from './pages/WhatsAppWorkflows';
+import WhatsAppCampaigns from './pages/WhatsAppCampaigns';
+import WhatsAppInbox from './pages/WhatsAppInbox';
 
 export default function App() {
   return (
@@ -29,20 +36,29 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/inquiries" element={<Inquiries />} />
-              <Route path="/inquiries/:id" element={<InquiryDetail />} />
-              <Route path="/followups" element={<FollowUps />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/institutions" element={<Institutions />} />
-              <Route path="/institutions/:id" element={<InstitutionDetail />} />
+              <Route path="/leads" element={<Leads />} />
+              <Route path="/leads/:id" element={<LeadDetail />} />
               <Route path="/students" element={<Students />} />
               <Route path="/students/:id" element={<StudentDetail />} />
-              <Route path="/applications" element={<Applications />} />
+              <Route path="/courses" element={<Courses />} />
+              <Route path="/admissions" element={<Admissions />} />
+              <Route path="/admissions/:id" element={<AdmissionDetail />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/payments/:id" element={<Payments />} />
+              <Route path="/companies" element={<Companies />} />
+              <Route path="/companies/:id" element={<CompanyDetail />} />
+              <Route path="/placements" element={<Placements />} />
               <Route path="/reports" element={<Reports />} />
-              <Route path="/master-data" element={<MasterData />} />
+              <Route path="/roles" element={<Roles />} />
+              <Route path="/users" element={<Users />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/appearance" element={<Appearance />} />
-              <Route path="/users" element={<Users />} />
+              <Route path="/whatsapp" element={<WhatsAppIntegrations />} />
+              <Route path="/whatsapp/templates" element={<WhatsAppTemplates />} />
+              <Route path="/whatsapp/workflows" element={<WhatsAppWorkflows />} />
+              <Route path="/whatsapp/campaigns" element={<WhatsAppCampaigns />} />
+              <Route path="/whatsapp/inbox" element={<WhatsAppInbox />} />
+              <Route path="/whatsapp/inbox/:id" element={<WhatsAppInbox />} />
             </Route>
           </Routes>
         </BrowserRouter>

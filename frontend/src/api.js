@@ -1,6 +1,5 @@
 // In local dev, Vite proxies /api to localhost:4000 (see vite.config.js).
-// In production (Vercel), set VITE_API_BASE_URL to your Render backend URL,
-// e.g. https://counseldesk-api.onrender.com
+// In production, set VITE_API_BASE_URL to your backend URL.
 const API_ROOT = import.meta.env.VITE_API_BASE_URL || '';
 const BASE = `${API_ROOT}/api`;
 
@@ -31,148 +30,160 @@ async function req(method, path, body) {
   return data;
 }
 
+const qs = (params) => {
+  const clean = Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+  const q = new URLSearchParams(clean).toString();
+  return q ? `?${q}` : '';
+};
+
 export const api = {
   // auth
   login: (username, password) => req('POST', '/auth/login', { username, password }),
+  me: () => req('GET', '/auth/me'),
 
-  // users
-  listUsers: () => req('GET', '/users'),
-  createUser: (body) => req('POST', '/users', body),
-  updateUser: (id, body) => req('PUT', `/users/${id}`, body),
-  deleteUser: (id) => req('DELETE', `/users/${id}`),
-
-  // institutions
-  listInstitutions: () => req('GET', '/institutions'),
-  getInstitution: (id) => req('GET', `/institutions/${id}`),
-  createInstitution: (body) => req('POST', '/institutions', body),
-  updateInstitution: (id, body) => req('PUT', `/institutions/${id}`, body),
-  deleteInstitution: (id) => req('DELETE', `/institutions/${id}`),
-  institutionCounselings: (id) => req('GET', `/institutions/${id}/counselings`),
-
-  // inquiries
-  listInquiries: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return req('GET', '/inquiries' + (q ? `?${q}` : ''));
-  },
-  getInquiry: (id) => req('GET', `/inquiries/${id}`),
-  createInquiry: (body) => req('POST', '/inquiries', body),
-  updateInquiry: (id, body) => req('PUT', `/inquiries/${id}`, body),
-  deleteInquiry: (id) => req('DELETE', `/inquiries/${id}`),
-  linkInstitution: (inquiryId, body) => req('POST', `/inquiries/${inquiryId}/institutions`, body),
-  updateLink: (linkId, body) => req('PUT', `/inquiries/institutions/${linkId}`, body),
-  removeLink: (linkId) => req('DELETE', `/inquiries/institutions/${linkId}`),
-  convertInquiry: (id) => req('POST', `/inquiries/${id}/convert`),
-  addFollowup: (id, body) => req('POST', `/inquiries/${id}/followups`, body),
-
-  // follow-ups (call log)
-  listFollowups: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return req('GET', '/followups' + (q ? `?${q}` : ''));
-  },
-  updateFollowup: (id, body) => req('PUT', `/followups/${id}`, body),
-  deleteFollowup: (id) => req('DELETE', `/followups/${id}`),
-  followupsSummary: () => req('GET', '/reports/followups-summary'),
+  // leads
+  listLeads: (params) => req('GET', '/leads' + qs(params)),
+  getLead: (id) => req('GET', `/leads/${id}`),
+  createLead: (body) => req('POST', '/leads', body),
+  updateLead: (id, body) => req('PUT', `/leads/${id}`, body),
+  deleteLead: (id) => req('DELETE', `/leads/${id}`),
+  addLeadActivity: (id, body) => req('POST', `/leads/${id}/activities`, body),
+  convertLead: (id) => req('POST', `/leads/${id}/convert`),
 
   // students
-  listStudents: () => req('GET', '/students'),
+  listStudents: (params) => req('GET', '/students' + qs(params)),
   getStudent: (id) => req('GET', `/students/${id}`),
+  createStudent: (body) => req('POST', '/students', body),
   updateStudent: (id, body) => req('PUT', `/students/${id}`, body),
+  deleteStudent: (id) => req('DELETE', `/students/${id}`),
 
-  // enrollments
-  listEnrollments: () => req('GET', '/enrollments'),
-  createEnrollment: (body) => req('POST', '/enrollments', body),
-  updateEnrollment: (id, body) => req('PUT', `/enrollments/${id}`, body),
-  deleteEnrollment: (id) => req('DELETE', `/enrollments/${id}`),
+  // courses
+  listCourses: (params) => req('GET', '/courses' + qs(params)),
+  getCourse: (id) => req('GET', `/courses/${id}`),
+  createCourse: (body) => req('POST', '/courses', body),
+  updateCourse: (id, body) => req('PUT', `/courses/${id}`, body),
+  deleteCourse: (id) => req('DELETE', `/courses/${id}`),
+  courseTenureOptions: () => req('GET', '/courses/tenure-options'),
 
-  // reports
-  summary: () => req('GET', '/reports/summary'),
-  institutionCounselingReport: () => req('GET', '/reports/institution-counseling'),
-  revenueByInstitution: () => req('GET', '/reports/revenue-by-institution'),
-  funnel: () => req('GET', '/reports/funnel'),
-  trend: () => req('GET', '/reports/trend'),
-
-  // custom fields
-  listCustomFields: (entityType) => req('GET', `/custom-fields?entity_type=${entityType}`),
-  createCustomField: (body) => req('POST', '/custom-fields', body),
-  updateCustomField: (id, body) => req('PUT', `/custom-fields/${id}`, body),
-  deleteCustomField: (id) => req('DELETE', `/custom-fields/${id}`),
-  getCustomValues: (entityType, recordId) => req('GET', `/custom-fields/values/${entityType}/${recordId}`),
-  saveCustomValues: (entityType, recordId, values) => req('POST', `/custom-fields/values/${entityType}/${recordId}`, { values }),
-
-  // master data
-  listCountries: () => req('GET', '/master-data/countries'),
-  createCountry: (body) => req('POST', '/master-data/countries', body),
-  deleteCountry: (id) => req('DELETE', `/master-data/countries/${id}`),
-
-  listStates: (countryId) => req('GET', `/master-data/states${countryId ? `?country_id=${countryId}` : ''}`),
-  createState: (body) => req('POST', '/master-data/states', body),
-  deleteState: (id) => req('DELETE', `/master-data/states/${id}`),
-
-  listCities: (stateId) => req('GET', `/master-data/cities${stateId ? `?state_id=${stateId}` : ''}`),
-  createCity: (body) => req('POST', '/master-data/cities', body),
-  deleteCity: (id) => req('DELETE', `/master-data/cities/${id}`),
-
-  listUniversities: () => req('GET', '/master-data/universities'),
-  createUniversity: (body) => req('POST', '/master-data/universities', body),
-  updateUniversity: (id, body) => req('PUT', `/master-data/universities/${id}`, body),
-  deleteUniversity: (id) => req('DELETE', `/master-data/universities/${id}`),
-
-  listCourses: (universityId) => req('GET', `/master-data/courses${universityId ? `?university_id=${universityId}` : ''}`),
-  createCourse: (body) => req('POST', '/master-data/courses', body),
-  updateCourse: (id, body) => req('PUT', `/master-data/courses/${id}`, body),
-  deleteCourse: (id) => req('DELETE', `/master-data/courses/${id}`),
-
-  listIntakes: () => req('GET', '/master-data/intakes'),
-  createIntake: (body) => req('POST', '/master-data/intakes', body),
-  deleteIntake: (id) => req('DELETE', `/master-data/intakes/${id}`),
-
-  listOptions: (listType) => req('GET', `/master-data/options?list_type=${listType}`),
-  createOption: (body) => req('POST', '/master-data/options', body),
-  updateOption: (id, body) => req('PUT', `/master-data/options/${id}`, body),
-  deleteOption: (id) => req('DELETE', `/master-data/options/${id}`),
-
-  // applications
-  listApplications: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return req('GET', '/applications' + (q ? `?${q}` : ''));
-  },
-  getApplication: (id) => req('GET', `/applications/${id}`),
-  createApplication: (body) => req('POST', '/applications', body),
-  updateApplication: (id, body) => req('PUT', `/applications/${id}`, body),
-  deleteApplication: (id) => req('DELETE', `/applications/${id}`),
-  convertApplication: (id, body) => req('POST', `/applications/${id}/convert`, body),
-
-  // documents
-  listDocuments: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return req('GET', '/documents' + (q ? `?${q}` : ''));
-  },
-  createDocument: (body) => req('POST', '/documents', body),
-  updateDocument: (id, body) => req('PUT', `/documents/${id}`, body),
-  deleteDocument: (id) => req('DELETE', `/documents/${id}`),
-
-  // tasks
-  listTasks: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return req('GET', '/tasks' + (q ? `?${q}` : ''));
-  },
-  createTask: (body) => req('POST', '/tasks', body),
-  updateTask: (id, body) => req('PUT', `/tasks/${id}`, body),
-  deleteTask: (id) => req('DELETE', `/tasks/${id}`),
+  // admissions
+  listAdmissions: (params) => req('GET', '/admissions' + qs(params)),
+  getAdmission: (id) => req('GET', `/admissions/${id}`),
+  createAdmission: (body) => req('POST', '/admissions', body),
+  updateAdmission: (id, body) => req('PUT', `/admissions/${id}`, body),
+  deleteAdmission: (id) => req('DELETE', `/admissions/${id}`),
+  nextInstallment: (id) => req('POST', `/admissions/${id}/next-installment`),
 
   // payments
-  listPayments: (params) => {
-    const q = new URLSearchParams(params || {}).toString();
-    return req('GET', '/payments' + (q ? `?${q}` : ''));
-  },
-  createPayment: (body) => req('POST', '/payments', body),
+  listPayments: (params) => req('GET', '/payments' + qs(params)),
+  getPayment: (id) => req('GET', `/payments/${id}`),
+  updatePayment: (id, body) => req('PUT', `/payments/${id}`, body),
   deletePayment: (id) => req('DELETE', `/payments/${id}`),
-  paymentSummary: (enrollmentId) => req('GET', `/payments/enrollment/${enrollmentId}/summary`),
+  receiptUrl: (id, institute) => `${BASE}/payments/${id}/receipt?institute=${institute}`,
 
-  tasksSummary: () => req('GET', '/reports/tasks-summary'),
+  // companies
+  listCompanies: (params) => req('GET', '/companies' + qs(params)),
+  getCompany: (id) => req('GET', `/companies/${id}`),
+  createCompany: (body) => req('POST', '/companies', body),
+  updateCompany: (id, body) => req('PUT', `/companies/${id}`, body),
+  deleteCompany: (id) => req('DELETE', `/companies/${id}`),
+
+  // placements
+  listPlacements: (params) => req('GET', '/placements' + qs(params)),
+  getPlacement: (id) => req('GET', `/placements/${id}`),
+  createPlacement: (body) => req('POST', '/placements', body),
+  updatePlacement: (id, body) => req('PUT', `/placements/${id}`, body),
+  deletePlacement: (id) => req('DELETE', `/placements/${id}`),
+
+  // dashboard
+  dashboard: () => req('GET', '/dashboard'),
+
+  // reports
+  reportLeads: (params) => req('GET', '/reports/leads' + qs(params)),
+  reportStudents: (params) => req('GET', '/reports/students' + qs(params)),
+  reportAdmissions: (params) => req('GET', '/reports/admissions' + qs(params)),
+  reportCourseWiseAdmissions: () => req('GET', '/reports/course-wise-admissions'),
+  reportFeeCollection: (params) => req('GET', '/reports/fee-collection' + qs(params)),
+  reportPendingFees: () => req('GET', '/reports/pending-fees'),
+  reportPayments: (params) => req('GET', '/reports/payments' + qs(params)),
+  reportPlacements: (params) => req('GET', '/reports/placements' + qs(params)),
+  reportInterviews: (params) => req('GET', '/reports/interviews' + qs(params)),
+  reportCompanies: () => req('GET', '/reports/companies'),
+  reportRevenue: (params) => req('GET', '/reports/revenue' + qs(params)),
+  reportMonthlyAdmissions: () => req('GET', '/reports/monthly-admissions'),
+  reportMonthlyCollection: () => req('GET', '/reports/monthly-collection'),
 
   // notifications
   listNotifications: () => req('GET', '/notifications'),
   markNotificationRead: (key) => req('POST', `/notifications/${key}/read`),
   markAllNotificationsRead: () => req('POST', '/notifications/read-all'),
+
+  // roles & users
+  listRoles: () => req('GET', '/roles'),
+  createRole: (body) => req('POST', '/roles', body),
+  updateRolePermissions: (id, permissions) => req('PUT', `/roles/${id}/permissions`, { permissions }),
+  deleteRole: (id) => req('DELETE', `/roles/${id}`),
+
+  listUsers: () => req('GET', '/users'),
+  createUser: (body) => req('POST', '/users', body),
+  updateUser: (id, body) => req('PUT', `/users/${id}`, body),
+  deleteUser: (id) => req('DELETE', `/users/${id}`),
+
+  // settings
+  listReceiptTemplates: () => req('GET', '/settings/receipt-templates'),
+  updateReceiptTemplate: (id, body) => req('PUT', `/settings/receipt-templates/${id}`, body),
+  listMasterOptions: (listType) => req('GET', `/settings/master-options${listType ? `?list_type=${listType}` : ''}`),
+  createMasterOption: (body) => req('POST', '/settings/master-options', body),
+  updateMasterOption: (id, body) => req('PUT', `/settings/master-options/${id}`, body),
+  deleteMasterOption: (id) => req('DELETE', `/settings/master-options/${id}`),
+
+  // AI assistant
+  listConversations: () => req('GET', '/assistant/conversations'),
+  createConversation: () => req('POST', '/assistant/conversations', {}),
+  getConversation: (id) => req('GET', `/assistant/conversations/${id}`),
+  sendAssistantMessage: (id, message) => req('POST', `/assistant/conversations/${id}/message`, { message }),
+  confirmAssistantAction: (id, approve) => req('POST', `/assistant/conversations/${id}/confirm`, { approve }),
+  assistantAuditLog: () => req('GET', '/assistant/audit-log'),
+
+  // dev
+  seedDemoData: () => req('POST', '/dev/seed-demo-data'),
+
+  // WhatsApp integrations
+  waProviderTypes: () => req('GET', '/whatsapp/provider-types'),
+  waListProviders: () => req('GET', '/whatsapp/providers'),
+  waConnectProvider: (body) => req('POST', '/whatsapp/providers', body),
+  waUpdateProvider: (id, body) => req('PUT', `/whatsapp/providers/${id}`, body),
+  waDeleteProvider: (id) => req('DELETE', `/whatsapp/providers/${id}`),
+  waSetDefaultProvider: (id) => req('POST', `/whatsapp/providers/${id}/set-default`),
+  waTestProvider: (id) => req('POST', `/whatsapp/providers/${id}/test`),
+  waSyncTemplates: (id) => req('POST', `/whatsapp/providers/${id}/sync-templates`),
+  waListTemplates: (params) => req('GET', '/whatsapp/templates' + qs(params)),
+  waAuditLog: () => req('GET', '/whatsapp/audit-log'),
+
+  // WhatsApp workflows
+  waListEvents: () => req('GET', '/whatsapp/events'),
+  waListWorkflows: () => req('GET', '/whatsapp/workflows'),
+  waCreateWorkflow: (body) => req('POST', '/whatsapp/workflows', body),
+  waUpdateWorkflow: (id, body) => req('PUT', `/whatsapp/workflows/${id}`, body),
+  waActivateWorkflow: (id) => req('POST', `/whatsapp/workflows/${id}/activate`),
+  waDeactivateWorkflow: (id) => req('POST', `/whatsapp/workflows/${id}/deactivate`),
+  waDeleteWorkflow: (id) => req('DELETE', `/whatsapp/workflows/${id}`),
+  waWorkflowRuns: (id) => req('GET', `/whatsapp/workflows/${id}/runs`),
+  waRunScheduledChecks: () => req('POST', '/whatsapp/workflows/run-scheduled-checks'),
+
+  // WhatsApp campaigns
+  waPreviewRecipients: (body) => req('POST', '/whatsapp/campaigns/preview-recipients', body),
+  waListCampaigns: () => req('GET', '/whatsapp/campaigns'),
+  waCreateCampaign: (body) => req('POST', '/whatsapp/campaigns', body),
+  waGetCampaign: (id) => req('GET', `/whatsapp/campaigns/${id}`),
+  waDeleteCampaign: (id) => req('DELETE', `/whatsapp/campaigns/${id}`),
+  waSendCampaign: (id, body) => req('POST', `/whatsapp/campaigns/${id}/send`, body || {}),
+  waListOptouts: () => req('GET', '/whatsapp/optouts'),
+  waAddOptout: (body) => req('POST', '/whatsapp/optouts', body),
+  waRemoveOptout: (id) => req('DELETE', `/whatsapp/optouts/${id}`),
+
+  // WhatsApp conversations
+  waListConversations: (params) => req('GET', '/whatsapp/conversations' + qs(params)),
+  waGetConversation: (id) => req('GET', `/whatsapp/conversations/${id}`),
+  waMarkConversationRead: (id) => req('POST', `/whatsapp/conversations/${id}/read`),
+  waReplyConversation: (id, text) => req('POST', `/whatsapp/conversations/${id}/reply`, { text }),
 };

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Users, GraduationCap, Building2, Wallet, PhoneCall, CalendarCheck, AlertTriangle, CheckSquare, FileCheck } from 'lucide-react';
+import { Users, GraduationCap, ClipboardList, Wallet, Briefcase, Building2, TrendingUp, CalendarClock } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import StatusBadge from '../components/StatusBadge';
 
-function Card({ label, value, sub, icon: Icon, accent }) {
-  return (
-    <div className="bg-white border border-line rounded-xl p-5 hover:border-ink/20 hover:shadow-sm transition-all">
+function Card({ label, value, sub, icon: Icon, accent, to }) {
+  const body = (
+    <div className="bg-white border border-line rounded-xl p-5 hover:border-ink/20 hover:shadow-sm transition-all h-full">
       <div className="flex items-start justify-between">
         <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</div>
         {Icon && (
@@ -22,37 +23,19 @@ function Card({ label, value, sub, icon: Icon, accent }) {
       {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
     </div>
   );
+  return to ? <Link to={to}>{body}</Link> : body;
 }
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const { user } = useAuth();
-  const [summary, setSummary] = useState(null);
-  const [byInstitution, setByInstitution] = useState([]);
-  const [counseling, setCounseling] = useState([]);
-  const [trend, setTrend] = useState([]);
-  const [funnel, setFunnel] = useState(null);
-  const [followupsSummary, setFollowupsSummary] = useState(null);
-  const [tasksSummary, setTasksSummary] = useState(null);
+  const [data, setData] = useState(null);
 
-  useEffect(() => {
-    api.summary().then(setSummary);
-    api.revenueByInstitution().then(setByInstitution);
-    api.institutionCounselingReport().then(setCounseling);
-    api.trend().then(setTrend);
-    api.funnel().then(setFunnel);
-    api.followupsSummary().then(setFollowupsSummary);
-    api.tasksSummary().then(setTasksSummary);
-  }, []);
+  useEffect(() => { api.dashboard().then(setData); }, []);
 
-  if (!summary) return <div className="p-8 text-slate-400">Loading…</div>;
-
-  const chartData = byInstitution
-    .filter((r) => r.total_commission > 0)
-    .slice(0, 8)
-    .map((r) => ({ id: r.id, name: r.name, commission: r.total_commission }));
+  if (!data) return <div className="p-8 text-slate-400">Loading…</div>;
+  const c = data.cards;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -76,16 +59,23 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Link to="/inquiries"><Card label="Total Inquiries" value={summary.total_inquiries} icon={Users} accent="bg-sky-50 text-sky-600" /></Link>
-        <Link to="/students"><Card label="Students Converted" value={summary.total_students} icon={GraduationCap} accent="bg-emerald-50 text-good" /></Link>
-        <Link to="/students"><Card label="Active Enrollments" value={summary.total_enrollments} icon={Building2} accent="bg-amber-soft text-amber" /></Link>
-        <Card label="Revenue Earned" value={inr(summary.revenue_total)} sub={`${inr(summary.revenue_pending)} pending`} icon={Wallet} accent="bg-ink/5 text-ink" />
+        <Card label="Total Leads" value={c.total_leads} sub={`${c.todays_leads} today · ${c.monthly_leads} this month`} icon={Users} accent="bg-sky-50 text-sky-600" to="/leads" />
+        <Card label="Active Students" value={c.active_students} sub={`${c.total_students} total`} icon={GraduationCap} accent="bg-emerald-50 text-good" to="/students" />
+        <Card label="Pending Admissions" value={c.pending_admissions} sub={`${c.new_admissions} today · ${c.monthly_admissions} this month`} icon={ClipboardList} accent="bg-amber-soft text-amber" to="/admissions" />
+        <Card label="Total Revenue" value={inr(c.total_revenue)} sub={`${inr(c.pending_fees)} pending · ${c.due_payments} due`} icon={Wallet} accent="bg-ink/5 text-ink" to="/payments" />
       </div>
 
-      {funnel && (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        <Card label="Today's Collection" value={inr(c.todays_collection)} icon={TrendingUp} accent="bg-emerald-50 text-good" to="/payments" />
+        <Card label="Monthly Collection" value={inr(c.monthly_collection)} icon={TrendingUp} accent="bg-emerald-50 text-good" to="/payments" />
+        <Card label="Companies" value={c.total_companies} icon={Building2} accent="bg-sky-50 text-sky-600" to="/companies" />
+        <Card label="Students Selected" value={c.students_selected} sub={`${c.interviews_scheduled} scheduled · ${c.placement_pending} pending`} icon={Briefcase} accent="bg-emerald-50 text-good" to="/placements" />
+      </div>
+
+      {data.admissions_by_status.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-4">
-          {funnel.inquiry_stages.map((s) => (
-            <Link key={s.status} to={`/inquiries?status=${encodeURIComponent(s.status)}`}
+          {data.admissions_by_status.map((s) => (
+            <Link key={s.status} to={`/admissions?status=${encodeURIComponent(s.status)}`}
               className="text-xs font-medium px-3 py-1.5 rounded-full border border-line text-slate-600 hover:border-ink/40 hover:text-ink bg-white">
               {s.status}: {s.c}
             </Link>
@@ -93,110 +83,111 @@ export default function Dashboard() {
         </div>
       )}
 
-      {followupsSummary && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-ink mb-3">Follow-ups</h2>
-          <div className="grid grid-cols-3 gap-4">
-            <Link to="/followups?filter=today">
-              <Card label="Planned Today" value={followupsSummary.planned_today} icon={CalendarCheck} accent="bg-sky-50 text-sky-600" />
-            </Link>
-            <Link to="/followups?filter=done">
-              <Card label="Done Today" value={followupsSummary.done_today} icon={PhoneCall} accent="bg-emerald-50 text-good" />
-            </Link>
-            <Link to="/followups?filter=overdue">
-              <Card label="Overdue" value={followupsSummary.overdue} icon={AlertTriangle} accent="bg-red-50 text-warn" />
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {tasksSummary && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-ink mb-3">Tasks &amp; Documents</h2>
-          <div className="grid grid-cols-4 gap-4">
-            <Link to="/tasks?filter=today">
-              <Card label="Tasks Due Today" value={tasksSummary.due_today} icon={CheckSquare} accent="bg-sky-50 text-sky-600" />
-            </Link>
-            <Link to="/tasks?filter=done">
-              <Card label="Tasks Done Today" value={tasksSummary.done_today} icon={CheckSquare} accent="bg-emerald-50 text-good" />
-            </Link>
-            <Link to="/tasks?filter=overdue">
-              <Card label="Tasks Overdue" value={tasksSummary.overdue} icon={AlertTriangle} accent="bg-red-50 text-warn" />
-            </Link>
-            <Link to="/students">
-              <Card label="Pending Documents" value={tasksSummary.pending_documents} icon={FileCheck} accent="bg-amber-soft text-amber" />
-            </Link>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white border border-line rounded-xl p-5 mt-6">
-        <h2 className="text-sm font-semibold text-ink mb-1">Inquiry trend (last 6 months)</h2>
-        <p className="text-xs text-slate-400 mb-3">Click a point to see that month's inquiries.</p>
-        {trend.length === 0 ? (
-          <p className="text-sm text-slate-400">Not enough data yet.</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={trend} onClick={(e) => e && e.activeLabel && navigate(`/inquiries?month=${e.activeLabel}`)}
-              style={{ cursor: 'pointer' }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D8" />
-              <XAxis dataKey="month" fontSize={12} />
-              <YAxis fontSize={12} allowDecimals={false} />
+      <div className="grid md:grid-cols-2 gap-6 mt-6">
+        <div className="bg-white border border-line rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-ink mb-1">Admission Trends</h2>
+          <p className="text-xs text-slate-400 mb-4">Last 6 months</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={data.admission_trends}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-line)" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
-              <Line type="monotone" dataKey="inquiries" stroke="#14213D" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              <Bar dataKey="c" name="Admissions" fill="var(--color-amber)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-white border border-line rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-ink mb-1">Monthly Revenue</h2>
+          <p className="text-xs text-slate-400 mb-4">Collected payments, last 6 months</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={data.monthly_revenue_trend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-line)" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v) => inr(v)} />
+              <Line type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
-        <div className="bg-white border border-line rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-ink mb-1">Commission by institution</h2>
-          <p className="text-xs text-slate-400 mb-3">Click a bar to open that institution.</p>
-          {chartData.length === 0 ? (
-            <p className="text-sm text-slate-400">No revenue recorded yet.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D8" />
-                <XAxis type="number" tickFormatter={(v) => `₹${v / 1000}k`} fontSize={12} />
-                <YAxis type="category" dataKey="name" width={110} fontSize={12} />
-                <Tooltip formatter={(v) => inr(v)} />
-                <Bar dataKey="commission" fill="#E3A008" radius={[0, 4, 4, 0]} cursor="pointer"
-                  onClick={(data) => navigate(`/institutions/${data.id}`)} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
         </div>
 
         <div className="bg-white border border-line rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-ink mb-4">Counseling volume by institution</h2>
-          {counseling.length === 0 ? (
-            <p className="text-sm text-slate-400">No institutions yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-line">
-                  <th className="py-2 font-medium">Institution</th>
-                  <th className="py-2 font-medium text-right">Counseled</th>
-                  <th className="py-2 font-medium text-right">Offers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {counseling.slice(0, 8).map((row) => (
-                  <tr key={row.id} className="border-b border-line/60 hover:bg-canvas/60">
-                    <td className="py-2">
-                      <Link to={`/institutions/${row.id}`} className="text-ink hover:text-amber">{row.name}</Link>
-                    </td>
-                    <td className="py-2 text-right">{row.counseling_count}</td>
-                    <td className="py-2 text-right text-good">{row.offers}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <h2 className="text-sm font-semibold text-ink mb-3">Top Courses (by admissions)</h2>
+          <div className="space-y-2">
+            {data.top_courses.map((tc) => (
+              <div key={tc.course_name} className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">{tc.course_name}</span>
+                <span className="font-medium text-ink">{tc.admissions}</span>
+              </div>
+            ))}
+            {data.top_courses.length === 0 && <p className="text-sm text-slate-400">No admissions yet.</p>}
+          </div>
+        </div>
+
+        <div className="bg-white border border-line rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-ink mb-3">Course-wise Revenue</h2>
+          <div className="space-y-2">
+            {data.course_wise_revenue.map((cw) => (
+              <div key={cw.course_name} className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">{cw.course_name}</span>
+                <span className="font-medium text-ink">{inr(cw.revenue)}</span>
+              </div>
+            ))}
+            {data.course_wise_revenue.length === 0 && <p className="text-sm text-slate-400">No revenue yet.</p>}
+          </div>
         </div>
       </div>
+
+      <div className="grid md:grid-cols-3 gap-6 mt-6">
+        <div className="bg-white border border-line rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-ink mb-3">Recent Admissions</h2>
+          <div className="space-y-3">
+            {data.recent_admissions.map((a) => (
+              <Link key={a.id} to={`/admissions/${a.id}`} className="block text-sm hover:bg-canvas -mx-2 px-2 py-1 rounded">
+                <div className="text-ink font-medium">{a.student_name}</div>
+                <div className="text-xs text-slate-400">{a.course_name} · {a.admission_number}</div>
+              </Link>
+            ))}
+            {data.recent_admissions.length === 0 && <p className="text-sm text-slate-400">Nothing yet.</p>}
+          </div>
+        </div>
+
+        <div className="bg-white border border-line rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-ink mb-3">Recent Payments</h2>
+          <div className="space-y-3">
+            {data.recent_payments.map((p) => (
+              <Link key={p.id} to={`/payments/${p.id}`} className="flex items-center justify-between text-sm hover:bg-canvas -mx-2 px-2 py-1 rounded">
+                <div>
+                  <div className="text-ink font-medium">{p.student_name}</div>
+                  <div className="text-xs text-slate-400">{inr(p.amount)}</div>
+                </div>
+                <StatusBadge status={p.status} />
+              </Link>
+            ))}
+            {data.recent_payments.length === 0 && <p className="text-sm text-slate-400">Nothing yet.</p>}
+          </div>
+        </div>
+
+        <div className="bg-white border border-line rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-ink mb-3 flex items-center gap-1.5">
+            <CalendarClock className="w-4 h-4" /> Upcoming Interviews
+          </h2>
+          <div className="space-y-3">
+            {data.upcoming_interviews.map((i) => (
+              <Link key={i.id} to={`/placements`} className="block text-sm hover:bg-canvas -mx-2 px-2 py-1 rounded">
+                <div className="text-ink font-medium">{i.student_name} → {i.company_name}</div>
+                <div className="text-xs text-slate-400">{i.interview_date?.slice(0, 10)} {i.interview_round ? `· ${i.interview_round}` : ''}</div>
+              </Link>
+            ))}
+            {data.upcoming_interviews.length === 0 && <p className="text-sm text-slate-400">Nothing scheduled.</p>}
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-400 mt-4">
+        Placement success rate: <span className="font-medium text-ink">{data.placement_success_rate}%</span>
+      </p>
     </div>
   );
 }

@@ -1,24 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, PhoneCall, FileText, CheckCircle2, Wallet, FileWarning } from 'lucide-react';
+import { Bell, UserPlus, PhoneCall, ClipboardList, Wallet, CheckCircle2, CalendarClock, Briefcase } from 'lucide-react';
 import { api } from '../api';
 
 const ICONS = {
-  followup_due_today: PhoneCall,
-  followup_overdue: PhoneCall,
-  application_submitted: FileText,
-  offer_received: CheckCircle2,
-  payment_overdue: Wallet,
-  document_pending: FileWarning,
+  new_lead_assigned: UserPlus,
+  upcoming_followup: PhoneCall,
+  admission_created: ClipboardList,
+  payment_due: Wallet,
+  payment_received: CheckCircle2,
+  interview_scheduled: Briefcase,
+  interview_reminder: CalendarClock,
+  placement_result_updated: CheckCircle2,
 };
 
 const COLORS = {
-  followup_due_today: 'text-sky-600 bg-sky-50',
-  followup_overdue: 'text-warn bg-red-50',
-  application_submitted: 'text-sky-600 bg-sky-50',
-  offer_received: 'text-good bg-emerald-50',
-  payment_overdue: 'text-warn bg-red-50',
-  document_pending: 'text-amber bg-amber-soft',
+  new_lead_assigned: 'text-sky-600 bg-sky-50',
+  upcoming_followup: 'text-amber bg-amber-soft',
+  admission_created: 'text-sky-600 bg-sky-50',
+  payment_due: 'text-warn bg-red-50',
+  payment_received: 'text-good bg-emerald-50',
+  interview_scheduled: 'text-sky-600 bg-sky-50',
+  interview_reminder: 'text-warn bg-red-50',
+  placement_result_updated: 'text-good bg-emerald-50',
 };
 
 export default function NotificationBell() {
@@ -32,7 +36,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 60000); // refresh every minute
+    const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, []);
 

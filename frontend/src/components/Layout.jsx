@@ -1,32 +1,33 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users as UsersIcon, Building2, GraduationCap, Settings as SettingsIcon, LogOut, UserCog, PhoneCall, BarChart3, Palette, Database, FileText, CheckSquare, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users as UsersIcon, GraduationCap, BookOpen, ClipboardList, Wallet, Building2, Briefcase, BarChart3, Settings as SettingsIcon, LogOut, UserCog, ShieldCheck, Palette, Menu, X, MessageCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import GlobalSearch from './GlobalSearch';
 import NotificationBell from './NotificationBell';
+import AssistantWidget from './AssistantWidget';
 
 const links = [
   { to: '/', label: 'Dashboard', end: true, icon: LayoutDashboard },
-  { to: '/inquiries', label: 'Inquiries', icon: UsersIcon },
-  { to: '/followups', label: 'Follow-ups', icon: PhoneCall },
-  { to: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { to: '/institutions', label: 'Institutions', icon: Building2 },
+  { to: '/leads', label: 'Leads', icon: UsersIcon },
   { to: '/students', label: 'Students', icon: GraduationCap },
-  { to: '/applications', label: 'Applications', icon: FileText },
+  { to: '/courses', label: 'Courses', icon: BookOpen },
+  { to: '/admissions', label: 'Admissions', icon: ClipboardList },
+  { to: '/payments', label: 'Payments', icon: Wallet },
+  { to: '/companies', label: 'Companies', icon: Building2 },
+  { to: '/placements', label: 'Placements', icon: Briefcase },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/master-data', label: 'Master Data', icon: Database },
-  { to: '/settings', label: 'Custom Fields', icon: SettingsIcon },
-  { to: '/appearance', label: 'Appearance', icon: Palette },
+  { to: '/roles', label: 'Roles & Permissions', icon: ShieldCheck },
   { to: '/users', label: 'Users', icon: UserCog },
+  { to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/appearance', label: 'Appearance', icon: Palette },
 ];
 
-// The 4 most-used items get a dedicated mobile bottom-nav slot; everything
-// else (including these 4) is always reachable via the drawer.
 const BOTTOM_NAV = [
   { to: '/', label: 'Home', end: true, icon: LayoutDashboard },
-  { to: '/inquiries', label: 'Inquiries', icon: UsersIcon },
-  { to: '/followups', label: 'Calls', icon: PhoneCall },
-  { to: '/students', label: 'Students', icon: GraduationCap },
+  { to: '/leads', label: 'Leads', icon: UsersIcon },
+  { to: '/admissions', label: 'Admissions', icon: ClipboardList },
+  { to: '/payments', label: 'Payments', icon: Wallet },
 ];
 
 function SidebarContent({ onNavigate }) {
@@ -43,9 +44,9 @@ function SidebarContent({ onNavigate }) {
         </div>
         <div>
           <div className="font-display text-lg font-semibold tracking-tight leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
-            CounselDesk
+            EduPlace CRM
           </div>
-          <div className="text-[11px] text-white/40">Admission &amp; Revenue CRM</div>
+          <div className="text-[11px] text-white/40">Admission &amp; Placement</div>
         </div>
       </div>
 
@@ -73,7 +74,7 @@ function SidebarContent({ onNavigate }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-white truncate">{user?.full_name || user?.username}</div>
-            <div className="text-[11px] text-white/40 truncate">@{user?.username}</div>
+            <div className="text-[11px] text-white/40 truncate">{user?.role?.name || user?.role_name || '@' + user?.username}</div>
           </div>
           <button onClick={handleLogout} title="Log out" className="text-white/40 hover:text-white shrink-0">
             <LogOut className="w-4 h-4" />
@@ -90,12 +91,10 @@ export default function Layout() {
   return (
     <div className="min-h-screen" style={{ fontFamily: 'var(--font-body)' }}>
       <div className="flex">
-        {/* Desktop sidebar */}
         <aside className="hidden md:flex w-64 shrink-0 bg-ink text-white flex-col fixed inset-y-0">
           <SidebarContent />
         </aside>
 
-        {/* Mobile drawer */}
         {drawerOpen && (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="absolute inset-0 bg-black/50" onClick={() => setDrawerOpen(false)} />
@@ -107,7 +106,6 @@ export default function Layout() {
         )}
 
         <div className="flex-1 min-w-0 md:ml-64">
-          {/* Topbar */}
           <div className="sticky top-0 z-30 bg-white border-b border-line px-4 md:px-8 py-3 flex items-center gap-3">
             <button onClick={() => setDrawerOpen(true)} className="md:hidden text-ink shrink-0">
               <Menu className="w-5 h-5" />
@@ -122,7 +120,6 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-line flex">
         {BOTTOM_NAV.map((l) => {
           const Icon = l.icon;
@@ -144,6 +141,8 @@ export default function Layout() {
           More
         </button>
       </nav>
+
+      <AssistantWidget />
     </div>
   );
 }

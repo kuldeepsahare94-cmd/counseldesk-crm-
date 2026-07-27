@@ -1,62 +1,44 @@
 import { useEffect, useState } from 'react';
-import { UserPlus, Shield, ShieldOff, Trash2 } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
-const empty = { username: '', password: '', full_name: '' };
+const empty = { username: '', password: '', full_name: '', role_id: '', active: true };
 
 export default function Users() {
   const { user: me } = useAuth();
   const [list, setList] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(empty);
 
   const load = () => api.listUsers().then(setList);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.listRoles().then(setRoles); }, []);
 
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.createUser(form);
-      setForm(empty);
-      setShowForm(false);
-      load();
-    } catch (err) {
-      alert('Could not add user: ' + err.message);
-    }
+      await api.createUser({ ...form, role_id: form.role_id || null });
+      setForm(empty); setShowForm(false); load();
+    } catch (err) { alert('Could not save: ' + err.message); }
   };
 
   const toggleActive = async (u) => {
-    try {
-      await api.updateUser(u.id, { active: !u.active });
-      load();
-    } catch (err) {
-      alert(err.message);
-    }
+    if (u.id === me.id) return alert("You can't deactivate your own account while logged in.");
+    await api.updateUser(u.id, { active: !u.active });
+    load();
   };
 
-  const remove = async (u) => {
-    if (!confirm(`Delete user "${u.username}"? This can't be undone.`)) return;
-    try {
-      await api.deleteUser(u.id);
-      load();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
+  const changeRole = async (u, role_id) => { await api.updateUser(u.id, { role_id: role_id || null }); load(); };
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-8 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink" style={{ fontFamily: 'var(--font-display)' }}>
-            Users
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">Who can log in to CounselDesk, and who's blocked.</p>
+          <h1 className="font-display text-2xl font-semibold text-ink" style={{ fontFamily: 'var(--font-display)' }}>Users</h1>
+          <p className="text-sm text-slate-500 mt-1">Team members and the role each one is assigned.</p>
         </div>
-        <button onClick={() => setShowForm((s) => !s)}
-          className="flex items-center gap-2 bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink-light">
-          <UserPlus className="w-4 h-4" /> {showForm ? 'Cancel' : 'Add user'}
+        <button onClick={() => setShowForm((s) => !s)} className="bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink-light">
+          {showForm ? 'Cancel' : '+ Add user'}
         </button>
       </div>
 
@@ -66,11 +48,13 @@ export default function Users() {
             value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
           <input required type="password" placeholder="Password (min 6 chars)" className="border border-line rounded-lg px-3 py-2 text-sm"
             value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          <input placeholder="Full name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+          <input placeholder="Full name" className="border border-line rounded-lg px-3 py-2 text-sm"
             value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-          <button type="submit" className="col-span-2 bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">
-            Create user
-          </button>
+          <select className="border border-line rounded-lg px-3 py-2 text-sm" value={form.role_id} onChange={(e) => setForm({ ...form, role_id: e.target.value })}>
+            <option value="">Select role…</option>
+            {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <button type="submit" className="col-span-2 bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">Save user</button>
         </form>
       )}
 
@@ -79,43 +63,30 @@ export default function Users() {
           <thead>
             <tr className="text-left text-slate-500 bg-canvas border-b border-line">
               <th className="py-3 px-4 font-medium">Username</th>
-              <th className="py-3 px-4 font-medium">Full name</th>
-              <th className="py-3 px-4 font-medium">Status</th>
-              <th className="py-3 px-4 font-medium text-right">Actions</th>
+              <th className="py-3 px-4 font-medium">Full Name</th>
+              <th className="py-3 px-4 font-medium">Role</th>
+              <th className="py-3 px-4 font-medium">Active</th>
             </tr>
           </thead>
           <tbody>
             {list.map((u) => (
-              <tr key={u.id} className="border-b border-line/60">
-                <td className="py-3 px-4 text-ink font-medium">
-                  {u.username} {me?.id === u.id && <span className="text-xs text-slate-400">(you)</span>}
-                </td>
+              <tr key={u.id} className="border-b border-line/60 hover:bg-canvas/60">
+                <td className="py-3 px-4 text-ink font-medium">{u.username}</td>
                 <td className="py-3 px-4 text-slate-500">{u.full_name || '—'}</td>
                 <td className="py-3 px-4">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    u.active ? 'bg-emerald-100 text-good' : 'bg-red-50 text-warn'
-                  }`}>
-                    {u.active ? 'Active' : 'Inactive'}
-                  </span>
+                  <select value={u.role_id || ''} onChange={(e) => changeRole(u, e.target.value)} className="border border-line rounded-lg px-2 py-1 text-xs">
+                    <option value="">No role</option>
+                    {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
                 </td>
-                <td className="py-3 px-4 text-right">
-                  <div className="flex justify-end gap-3">
-                    <button onClick={() => toggleActive(u)} disabled={me?.id === u.id}
-                      title={u.active ? 'Deactivate' : 'Activate'}
-                      className="text-slate-400 hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed">
-                      {u.active ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                    </button>
-                    <button onClick={() => remove(u)} disabled={me?.id === u.id}
-                      title="Delete" className="text-slate-400 hover:text-warn disabled:opacity-30 disabled:cursor-not-allowed">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                <td className="py-3 px-4">
+                  <button onClick={() => toggleActive(u)}
+                    className={`text-xs font-medium px-2 py-1 rounded-full ${u.active ? 'bg-emerald-100 text-good' : 'bg-slate-100 text-slate-500'}`}>
+                    {u.active ? 'Active' : 'Inactive'}
+                  </button>
                 </td>
               </tr>
             ))}
-            {list.length === 0 && (
-              <tr><td colSpan={4} className="py-8 text-center text-slate-400">No users yet.</td></tr>
-            )}
           </tbody>
         </table>
       </div>
