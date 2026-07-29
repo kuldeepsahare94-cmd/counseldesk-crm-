@@ -26,6 +26,7 @@ import WhatsAppTemplates from './pages/WhatsAppTemplates';
 import WhatsAppWorkflows from './pages/WhatsAppWorkflows';
 import WhatsAppCampaigns from './pages/WhatsAppCampaigns';
 import WhatsAppInbox from './pages/WhatsAppInbox';
+import WhatsAppAnalytics from './pages/WhatsAppAnalytics';
 
 export default function App() {
   return (
@@ -59,6 +60,7 @@ export default function App() {
               <Route path="/whatsapp/campaigns" element={<WhatsAppCampaigns />} />
               <Route path="/whatsapp/inbox" element={<WhatsAppInbox />} />
               <Route path="/whatsapp/inbox/:id" element={<WhatsAppInbox />} />
+              <Route path="/whatsapp/analytics" element={<WhatsAppAnalytics />} />
             </Route>
           </Routes>
         </BrowserRouter>

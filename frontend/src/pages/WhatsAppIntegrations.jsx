@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, Plus, CheckCircle2, XCircle, RefreshCw, Star, Trash2, X, FileText, Zap, Send, Inbox } from 'lucide-react';
+import { MessageCircle, Plus, CheckCircle2, XCircle, RefreshCw, Star, Trash2, X, FileText, Zap, Send, Inbox, BarChart3 } from 'lucide-react';
 import { api } from '../api';
 import { usePermissions } from '../context/usePermissions';
 
@@ -129,25 +129,32 @@ export default function WhatsAppIntegrations() {
             <p className="text-sm text-slate-500 mt-1">Connect one or more WhatsApp Business Accounts across any supported provider.</p>
           </div>
         </div>
-        {can('whatsapp', 'create') && (
-          <div className="flex gap-2">
-            <Link to="/whatsapp/templates" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
-              <FileText className="w-4 h-4" /> View Templates
-            </Link>
-            <Link to="/whatsapp/workflows" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
-              <Zap className="w-4 h-4" /> Workflows
-            </Link>
-            <Link to="/whatsapp/campaigns" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
-              <Send className="w-4 h-4" /> Campaigns
-            </Link>
-            <Link to="/whatsapp/inbox" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
-              <Inbox className="w-4 h-4" /> Inbox
-            </Link>
+        <div className="flex gap-2 flex-wrap">
+          {can('whatsapp', 'view') && (
+            <>
+              <Link to="/whatsapp/templates" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
+                <FileText className="w-4 h-4" /> View Templates
+              </Link>
+              <Link to="/whatsapp/workflows" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
+                <Zap className="w-4 h-4" /> Workflows
+              </Link>
+              <Link to="/whatsapp/campaigns" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
+                <Send className="w-4 h-4" /> Campaigns
+              </Link>
+              <Link to="/whatsapp/inbox" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
+                <Inbox className="w-4 h-4" /> Inbox
+              </Link>
+              <Link to="/whatsapp/analytics" className="flex items-center gap-1.5 border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">
+                <BarChart3 className="w-4 h-4" /> Analytics
+              </Link>
+            </>
+          )}
+          {can('whatsapp', 'create') && (
             <button onClick={() => setShowConnect(true)} className="flex items-center gap-1.5 bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink-light">
               <Plus className="w-4 h-4" /> Connect Provider
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {toast && (

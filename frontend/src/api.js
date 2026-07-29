@@ -186,4 +186,8 @@ export const api = {
   waGetConversation: (id) => req('GET', `/whatsapp/conversations/${id}`),
   waMarkConversationRead: (id) => req('POST', `/whatsapp/conversations/${id}/read`),
   waReplyConversation: (id, text) => req('POST', `/whatsapp/conversations/${id}/reply`, { text }),
+
+  // WhatsApp analytics
+  waAnalytics: (params) => req('GET', '/whatsapp/analytics' + qs(params)),
+  waAnalyticsCampaignOptions: () => req('GET', '/whatsapp/analytics/campaign-options'),
 };
