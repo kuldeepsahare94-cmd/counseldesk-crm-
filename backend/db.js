@@ -541,4 +541,17 @@ CREATE INDEX IF NOT EXISTS idx_wa_messages_conversation ON whatsapp_messages(con
 CREATE INDEX IF NOT EXISTS idx_wa_messages_provider_msg_id ON whatsapp_messages(provider_message_id);
 `);
 
+// ===== Safe migration: add delivery-tracking columns to existing tables =====
+// This CRM is already live, so we can't just redefine these tables — CREATE
+// TABLE IF NOT EXISTS won't add columns to a table that already exists. This
+// checks first and is a no-op if the columns are already there.
+function ensureColumn(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+ensureColumn('whatsapp_campaign_recipients', 'delivered_at', 'delivered_at TEXT');
+ensureColumn('whatsapp_campaign_recipients', 'read_at', 'read_at TEXT');
+ensureColumn('whatsapp_workflow_runs', 'delivered_at', 'delivered_at TEXT');
+ensureColumn('whatsapp_workflow_runs', 'read_at', 'read_at TEXT');
+
 module.exports = db;

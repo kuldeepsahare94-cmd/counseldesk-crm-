@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { requirePermission } = require('../middleware/auth');
 const { fireEvent } = require('../services/whatsapp/workflowEngine');
+const { computeLeadScore } = require('../services/leadScore');
 
 router.get('/', requirePermission('leads', 'view'), (req, res) => {
   const { status, source, counselor, q } = req.query;
@@ -22,7 +23,8 @@ router.get('/:id', requirePermission('leads', 'view'), (req, res) => {
     LEFT JOIN courses c ON c.id = l.interested_course_id WHERE l.id=?`).get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Not found' });
   const activities = db.prepare('SELECT * FROM lead_activities WHERE lead_id=? ORDER BY created_at DESC').all(req.params.id);
-  res.json({ ...lead, activities });
+  const { score, label } = computeLeadScore(lead, activities.length);
+  res.json({ ...lead, activities, lead_score: score, lead_score_label: label });
 });
 
 router.post('/', requirePermission('leads', 'create'), (req, res) => {
@@ -61,6 +63,10 @@ router.put('/:id', requirePermission('leads', 'edit'), (req, res) => {
   if (req.body.status && req.body.status !== existing.status) {
     db.prepare('INSERT INTO lead_activities (lead_id, type, note) VALUES (?,?,?)')
       .run(req.params.id, 'status_change', `${existing.status} → ${req.body.status}`);
+  }
+  if (req.body.follow_up_date && req.body.follow_up_date !== existing.follow_up_date) {
+    db.prepare('INSERT INTO lead_activities (lead_id, type, note) VALUES (?,?,?)')
+      .run(req.params.id, 'schedule', `Follow-up scheduled for ${req.body.follow_up_date}`);
   }
   const updated = db.prepare('SELECT * FROM leads WHERE id=?').get(req.params.id);
   const leadFields = { student_name: updated.student_name, mobile: updated.mobile, source: updated.source, city: updated.city, assigned_counselor: updated.assigned_counselor, status: updated.status, follow_up_date: updated.follow_up_date };

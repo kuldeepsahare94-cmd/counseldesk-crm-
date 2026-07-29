@@ -35,8 +35,12 @@ function getOrCreateConversation(providerId, phoneNumber) {
 function applyStatusUpdate(providerMessageId, status, errorText) {
   if (!providerMessageId) return;
   const r1 = db.prepare(`UPDATE whatsapp_messages SET status=? WHERE provider_message_id=?`).run(status, providerMessageId);
-  const r2 = db.prepare(`UPDATE whatsapp_workflow_runs SET status=?, error=COALESCE(?, error) WHERE provider_message_id=?`).run(status === 'failed' ? 'failed' : 'sent', errorText || null, providerMessageId);
-  const r3 = db.prepare(`UPDATE whatsapp_campaign_recipients SET status=? WHERE provider_message_id=?`).run(status, providerMessageId);
+
+  const timestampCol = status === 'delivered' ? ", delivered_at=COALESCE(delivered_at, datetime('now'))"
+    : status === 'read' ? ", read_at=COALESCE(read_at, datetime('now'))" : '';
+  const r2 = db.prepare(`UPDATE whatsapp_workflow_runs SET status=?, error=COALESCE(?, error)${timestampCol} WHERE provider_message_id=?`)
+    .run(status === 'failed' ? 'failed' : 'sent', errorText || null, providerMessageId);
+  const r3 = db.prepare(`UPDATE whatsapp_campaign_recipients SET status=?${timestampCol} WHERE provider_message_id=?`).run(status, providerMessageId);
   return r1.changes + r2.changes + r3.changes;
 }
 

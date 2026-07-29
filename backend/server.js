@@ -40,6 +40,7 @@ app.use('/api/whatsapp', requireAuth, require('./routes/whatsapp'));
 app.use('/api/whatsapp', requireAuth, require('./routes/whatsappWorkflows'));
 app.use('/api/whatsapp', requireAuth, require('./routes/whatsappCampaigns'));
 app.use('/api/whatsapp', requireAuth, require('./routes/whatsappConversations'));
+app.use('/api/whatsapp', requireAuth, require('./routes/whatsappAnalytics'));
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Placement CRM API running on port ${PORT}`));
