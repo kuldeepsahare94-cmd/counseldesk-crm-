@@ -327,7 +327,7 @@ CREATE INDEX IF NOT EXISTS idx_wa_audit_provider ON whatsapp_audit_log(provider_
 // ===== Seed default roles & permission matrix =====
 const roleCount = db.prepare('SELECT COUNT(*) c FROM roles').get().c;
 if (roleCount === 0) {
-  const modules = ['leads', 'students', 'courses', 'admissions', 'payments', 'companies', 'placements', 'reports', 'users', 'settings', 'assistant', 'whatsapp'];
+  const modules = ['leads', 'students', 'courses', 'admissions', 'payments', 'companies', 'placements', 'reports', 'users', 'settings', 'assistant', 'whatsapp', 'lead_sources'];
   const insertRole = db.prepare('INSERT INTO roles (name, is_system) VALUES (?,1)');
   const insertPerm = db.prepare(`INSERT INTO role_permissions (role_id, module, can_view, can_create, can_edit, can_delete, can_export) VALUES (?,?,?,?,?,?,?)`);
 
@@ -340,25 +340,25 @@ if (roleCount === 0) {
       leads: [1, 1, 1, 0, 1], students: [1, 1, 1, 0, 0], courses: [1, 0, 0, 0, 0],
       admissions: [1, 1, 1, 0, 0], payments: [1, 0, 0, 0, 0], companies: [0, 0, 0, 0, 0],
       placements: [0, 0, 0, 0, 0], reports: [1, 0, 0, 0, 1], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 1, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0],
+      assistant: [1, 1, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
     },
     'Accountant': {
       leads: [0, 0, 0, 0, 0], students: [1, 0, 0, 0, 0], courses: [1, 0, 0, 0, 0],
       admissions: [1, 0, 0, 0, 0], payments: [1, 1, 1, 0, 1], companies: [0, 0, 0, 0, 0],
       placements: [0, 0, 0, 0, 0], reports: [1, 0, 0, 0, 1], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 1, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0],
+      assistant: [1, 1, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
     },
     'Placement Officer': {
       leads: [0, 0, 0, 0, 0], students: [1, 0, 0, 0, 0], courses: [1, 0, 0, 0, 0],
       admissions: [1, 0, 0, 0, 0], payments: [0, 0, 0, 0, 0], companies: [1, 1, 1, 0, 1],
       placements: [1, 1, 1, 0, 1], reports: [1, 0, 0, 0, 1], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 1, 0, 0, 0], whatsapp: [1, 0, 0, 0, 0],
+      assistant: [1, 1, 0, 0, 0], whatsapp: [1, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
     },
     'Trainer': {
       leads: [0, 0, 0, 0, 0], students: [1, 0, 0, 0, 0], courses: [1, 0, 0, 0, 0],
       admissions: [1, 0, 0, 0, 0], payments: [0, 0, 0, 0, 0], companies: [0, 0, 0, 0, 0],
       placements: [1, 0, 0, 0, 0], reports: [0, 0, 0, 0, 0], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 0, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0],
+      assistant: [1, 0, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
     },
   };
 
@@ -553,5 +553,76 @@ ensureColumn('whatsapp_campaign_recipients', 'delivered_at', 'delivered_at TEXT'
 ensureColumn('whatsapp_campaign_recipients', 'read_at', 'read_at TEXT');
 ensureColumn('whatsapp_workflow_runs', 'delivered_at', 'delivered_at TEXT');
 ensureColumn('whatsapp_workflow_runs', 'read_at', 'read_at TEXT');
+
+// ============================================================================
+// Lead Source Integrations — "plug and play" lead capture, same architecture
+// pattern as WhatsApp: one hub, pluggable connectors underneath.
+// ============================================================================
+db.exec(`
+CREATE TABLE IF NOT EXISTS lead_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  source_type TEXT NOT NULL,          -- website_form | zapier_webhook | facebook_leads | instagram_leads | linkedin_leads
+  api_key TEXT NOT NULL UNIQUE,        -- secret in the capture URL — treat like a password
+  status TEXT DEFAULT 'Active',        -- Active | Inactive
+  default_status TEXT DEFAULT 'New',
+  default_counselor TEXT,
+  default_course_id INTEGER,
+  field_mapping_json TEXT DEFAULT '{}', -- {"incoming_field_name": "crm_lead_column"}
+  config_encrypted TEXT,               -- platform credentials (FB/LinkedIn page tokens), AES-256-GCM encrypted
+  webhook_secret_encrypted TEXT,       -- for FB/LinkedIn webhook verification
+  total_leads_count INTEGER DEFAULT 0,
+  last_received_at TEXT,
+  created_by INTEGER,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (default_course_id) REFERENCES courses(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Every single submission attempt, successful or not — for debugging a customer's
+-- form integration and for spotting spam/bot floods.
+CREATE TABLE IF NOT EXISTS lead_capture_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER,
+  raw_payload TEXT,
+  status TEXT DEFAULT 'success',       -- success | duplicate | rejected_spam | rejected_rate_limit | error
+  lead_id INTEGER,
+  error TEXT,
+  ip_address TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (source_id) REFERENCES lead_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lead_capture_log_source ON lead_capture_log(source_id);
+CREATE INDEX IF NOT EXISTS idx_lead_capture_log_ip ON lead_capture_log(ip_address, created_at);
+`);
+
+// ============================================================================
+// Facebook/Instagram OAuth connections — the "Connect Facebook Account" flow.
+// One connection per user who authorizes; each connection can have many Pages,
+// each Page can have many Lead Forms, each Form becomes its own lead_source.
+// ============================================================================
+db.exec(`
+CREATE TABLE IF NOT EXISTS facebook_connections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  connected_by INTEGER NOT NULL,
+  fb_user_id TEXT,
+  fb_user_name TEXT,
+  user_access_token_encrypted TEXT NOT NULL,
+  token_expires_at TEXT,
+  connected_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (connected_by) REFERENCES users(id) ON DELETE CASCADE
+);
+`);
+
+function ensureColumn2(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+ensureColumn2('lead_sources', 'connection_id', 'connection_id INTEGER REFERENCES facebook_connections(id) ON DELETE SET NULL');
+ensureColumn2('lead_sources', 'fb_page_id', 'fb_page_id TEXT');
+ensureColumn2('lead_sources', 'fb_page_name', 'fb_page_name TEXT');
+ensureColumn2('lead_sources', 'fb_form_id', 'fb_form_id TEXT');
+ensureColumn2('lead_sources', 'fb_form_name', 'fb_form_name TEXT');
 
 module.exports = db;

@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { requirePermission } = require('../middleware/auth');
 
-const MODULES = ['leads', 'students', 'courses', 'admissions', 'payments', 'companies', 'placements', 'reports', 'users', 'settings', 'assistant', 'whatsapp'];
+const MODULES = ['leads', 'students', 'courses', 'admissions', 'payments', 'companies', 'placements', 'reports', 'users', 'settings', 'assistant', 'whatsapp', 'lead_sources'];
 
 router.get('/', requirePermission('users', 'view'), (req, res) => {
   const roles = db.prepare('SELECT * FROM roles ORDER BY id').all();
