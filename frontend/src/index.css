@@ -57,10 +57,3 @@ html.dark-mode textarea {
 html.dark-mode ::placeholder {
   color: #6B6F7B;
 }
-
-/* ===== Print support (Reports page "Print" / "Export to PDF" — browser print dialog) ===== */
-@media print {
-  aside, nav, .no-print { display: none !important; }
-  main { margin: 0 !important; padding: 0 !important; }
-  body { background: white !important; }
-}

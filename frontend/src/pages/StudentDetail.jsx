@@ -1,193 +1,386 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, Pencil, X, GraduationCap, ClipboardList, Wallet, Briefcase, ShieldAlert, Users } from 'lucide-react';
+import { useParams, Link } from 'react-router-dom';
 import { api } from '../api';
-import { usePermissions } from '../context/usePermissions';
 import StatusBadge from '../components/StatusBadge';
+import CustomFieldsPanel from '../components/CustomFieldsPanel';
+import DocumentsChecklist from '../components/DocumentsChecklist';
+import PaymentHistory from '../components/PaymentHistory';
+import ActivityTimeline from '../components/ActivityTimeline';
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const initialsOf = (name) => (name || '?').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-
-function InfoCard({ icon: Icon, title, accent, children }) {
-  return (
-    <div className={`bg-white border border-line rounded-xl p-4 border-l-4 ${accent}`}>
-      <h3 className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1.5 mb-2">
-        <Icon className="w-3.5 h-3.5" /> {title}
-      </h3>
-      {children}
-    </div>
-  );
-}
 
 export default function StudentDetail() {
   const { id } = useParams();
-  const navigate = useNavigate();
-  const can = usePermissions();
   const [student, setStudent] = useState(null);
+  const [institutions, setInstitutions] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ institution_id: '', course: '', course_id: '', fee_total: '', payment_status: 'Pending' });
+  const [catalogCourses, setCatalogCourses] = useState([]);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [editingEnrollment, setEditingEnrollment] = useState(null);
+  const [enrollForm, setEnrollForm] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [paymentsOpen, setPaymentsOpen] = useState(null);
+  const [countries, setCountries] = useState([]);
+  const [englishTests, setEnglishTests] = useState([]);
 
-  const load = () => api.getStudent(id).then((s) => { setStudent(s); setForm(s); });
+  useEffect(() => {
+    api.listCountries().then(setCountries);
+    api.listOptions('english_test').then(setEnglishTests);
+  }, []);
+
+  const load = () => {
+    api.getStudent(id).then((s) => { setStudent(s); setEditForm(s); });
+    api.listInstitutions().then(setInstitutions);
+    api.listApplications({ student_id: id }).then(setApplications);
+  };
   useEffect(() => { load(); }, [id]);
 
   if (!student) return <div className="p-8 text-slate-400">Loading…</div>;
 
-  const save = async (e) => {
+  const pickInstitution = (institutionId) => {
+    setForm((f) => ({ ...f, institution_id: institutionId, course_id: '', course: '' }));
+    const inst = institutions.find((i) => String(i.id) === String(institutionId));
+    if (inst && inst.university_id) {
+      api.listCourses(inst.university_id).then(setCatalogCourses);
+    } else {
+      setCatalogCourses([]);
+    }
+  };
+
+  const pickCourse = (courseId) => {
+    const c = catalogCourses.find((x) => String(x.id) === String(courseId));
+    setForm((f) => ({
+      ...f,
+      course_id: courseId,
+      course: c ? c.name : f.course,
+      fee_total: c && c.tuition_fee ? c.tuition_fee : f.fee_total,
+    }));
+  };
+
+  const submitEnrollment = async (e) => {
     e.preventDefault();
-    await api.updateStudent(id, form);
-    setEditing(false);
+    try {
+      await api.createEnrollment({
+        student_id: Number(id),
+        institution_id: Number(form.institution_id),
+        course: form.course,
+        course_id: form.course_id || null,
+        fee_total: Number(form.fee_total) || 0,
+        payment_status: form.payment_status,
+      });
+      setForm({ institution_id: '', course: '', course_id: '', fee_total: '', payment_status: 'Pending' });
+      setCatalogCourses([]);
+      setShowForm(false);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
+  };
+
+  const updatePayment = async (enrollmentId, payment_status) => {
+    await api.updateEnrollment(enrollmentId, { payment_status });
     load();
   };
 
-  const totalPaid = student.payments.filter((p) => p.status === 'Paid').reduce((s, p) => s + Number(p.amount), 0);
-  const totalDue = student.payments.filter((p) => p.status !== 'Paid').reduce((s, p) => s + Number(p.amount), 0);
-  const selectedCount = student.placements.filter((p) => p.result === 'Selected').length;
+  const saveStudentEdit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.updateStudent(id, editForm);
+      setEditing(false);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
+  };
+
+  const startEditEnrollment = (en) => {
+    setEditingEnrollment(en.id);
+    setEnrollForm({ course: en.course || '', fee_total: en.fee_total, commission_type: en.commission_type,
+      commission_value: en.commission_value, payment_status: en.payment_status, status: en.status });
+  };
+
+  const saveEnrollmentEdit = async (enrollmentId) => {
+    try {
+      await api.updateEnrollment(enrollmentId, {
+        ...enrollForm,
+        fee_total: Number(enrollForm.fee_total) || 0,
+        commission_value: Number(enrollForm.commission_value) || 0,
+      });
+      setEditingEnrollment(null);
+      load();
+    } catch (err) {
+      alert('Could not save: ' + err.message);
+    }
+  };
 
   return (
-    <div className="p-8 max-w-5xl">
-      <button onClick={() => navigate('/students')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-ink mb-1">
-        <ArrowLeft className="w-3.5 h-3.5" /> Students
-      </button>
-      <p className="text-xs text-slate-300 mb-4">Students / <span className="text-slate-500">{student.student_name}</span></p>
-
-      {/* Gradient hero header — indigo identity for the Students module */}
-      <div className="rounded-2xl p-6 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #4338CA, #6366F1)' }}>
-        <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
-        <div className="relative flex items-start justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur text-white flex items-center justify-center font-semibold text-lg shrink-0 border border-white/20">
-              {initialsOf(student.student_name)}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-display text-xl font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>{student.student_name}</h1>
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${student.status === 'Active' ? 'bg-emerald-400/20 text-emerald-200' : 'bg-white/15 text-white/70'}`}>{student.status}</span>
-              </div>
-              <p className="text-indigo-100 text-xs mt-1">{student.qualification || 'Qualification not on file'}</p>
-              <div className="flex items-center gap-3 mt-2">
-                <a href={student.mobile ? `tel:${student.mobile}` : undefined} className="flex items-center gap-1 text-xs text-white/90 hover:text-white">
-                  <Phone className="w-3 h-3" /> {student.mobile || '—'}
-                </a>
-                <a href={student.email ? `mailto:${student.email}` : undefined} className="flex items-center gap-1 text-xs text-white/90 hover:text-white">
-                  <Mail className="w-3 h-3" /> {student.email || '—'}
-                </a>
-              </div>
-            </div>
-          </div>
-          {can('students', 'edit') && (
-            <button onClick={() => setEditing((s) => !s)} className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm font-medium px-3 py-2 rounded-lg backdrop-blur">
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
-          )}
+    <div className="p-8 max-w-4xl">
+      <Link to="/students" className="text-xs text-slate-400 hover:text-ink">&larr; Students</Link>
+      <div className="flex items-center justify-between mt-2">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-ink" style={{ fontFamily: 'var(--font-display)' }}>
+            {student.name}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">{student.phone} {student.email && `· ${student.email}`}</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {[
+              student.date_of_birth && `DOB: ${student.date_of_birth}`,
+              student.gender,
+              student.passport_number && `Passport: ${student.passport_number}`,
+              student.country_name && `${student.city ? student.city + ', ' : ''}${student.country_name}`,
+              student.highest_qualification,
+              student.english_test && `${student.english_test}${student.english_test_score ? ' - ' + student.english_test_score : ''}`,
+            ].filter(Boolean).join(' · ') || 'No profile details yet — click Edit to add them.'}
+          </p>
         </div>
-
-        {/* Quick stats */}
-        <div className="relative grid grid-cols-3 gap-3 mt-5">
-          <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/10">
-            <div className="text-white/60 text-[10px] uppercase">Admissions</div>
-            <div className="text-white text-lg font-semibold">{student.admissions.length}</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/10">
-            <div className="text-white/60 text-[10px] uppercase">Paid / Due</div>
-            <div className="text-white text-lg font-semibold">{inr(totalPaid)} <span className="text-white/50 text-xs font-normal">/ {inr(totalDue)}</span></div>
-          </div>
-          <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/10">
-            <div className="text-white/60 text-[10px] uppercase">Placements</div>
-            <div className="text-white text-lg font-semibold">{selectedCount} <span className="text-white/50 text-xs font-normal">selected</span></div>
-          </div>
-        </div>
+        <button onClick={() => { setEditForm(student); setEditing((s) => !s); }}
+          className="bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink-light">
+          {editing ? 'Cancel' : 'Edit'}
+        </button>
       </div>
 
       {editing && (
-        <form onSubmit={save} className="bg-white border border-line rounded-xl p-5 mt-4 grid grid-cols-2 gap-3">
-          <input placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2" value={form.student_name || ''} onChange={(e) => setForm({ ...form, student_name: e.target.value })} />
-          <input placeholder="Mobile" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.mobile || ''} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
-          <input placeholder="Alternate mobile" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.alternate_mobile || ''} onChange={(e) => setForm({ ...form, alternate_mobile: e.target.value })} />
-          <input placeholder="Email" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <input placeholder="Aadhaar number" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.aadhaar_number || ''} onChange={(e) => setForm({ ...form, aadhaar_number: e.target.value })} />
-          <input placeholder="Parent name" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.parent_name || ''} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} />
-          <input placeholder="Parent mobile" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.parent_mobile || ''} onChange={(e) => setForm({ ...form, parent_mobile: e.target.value })} />
-          <input placeholder="Emergency contact" className="border border-line rounded-lg px-3 py-2 text-sm" value={form.emergency_contact || ''} onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })} />
-          <select className="border border-line rounded-lg px-3 py-2 text-sm" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-            <option>Active</option><option>Inactive</option>
-          </select>
-          <div className="col-span-2 flex gap-2">
-            <button type="submit" className="bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-indigo-700">Save changes</button>
-            <button type="button" onClick={() => setEditing(false)} className="border border-line text-sm font-medium px-4 py-2 rounded-lg"><X className="w-4 h-4" /></button>
+        <form onSubmit={saveStudentEdit} className="bg-white border border-line rounded-xl p-5 mt-4 space-y-4">
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Basic details</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input required placeholder="Name" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+                value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              <input placeholder="Phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+              <input placeholder="Alternate phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.alternate_phone || ''} onChange={(e) => setEditForm({ ...editForm, alternate_phone: e.target.value })} />
+              <input placeholder="Email" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+              <input type="date" placeholder="Date of birth" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.date_of_birth || ''} onChange={(e) => setEditForm({ ...editForm, date_of_birth: e.target.value })} />
+              <select className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.gender || ''} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                <option value="">Gender…</option>
+                <option>Male</option><option>Female</option><option>Other</option>
+              </select>
+              <input placeholder="Passport number" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.passport_number || ''} onChange={(e) => setEditForm({ ...editForm, passport_number: e.target.value })} />
+            </div>
           </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Address</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Address" className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+                value={editForm.address || ''} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+              <input placeholder="City" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.city || ''} onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} />
+              <select className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.country_id || ''} onChange={(e) => setEditForm({ ...editForm, country_id: e.target.value })}>
+                <option value="">Country…</option>
+                {countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Academic profile</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Highest qualification" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.highest_qualification || ''} onChange={(e) => setEditForm({ ...editForm, highest_qualification: e.target.value })} />
+              <input placeholder="Academic % / GPA" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.academic_percentage || ''} onChange={(e) => setEditForm({ ...editForm, academic_percentage: e.target.value })} />
+              <select className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.english_test || ''} onChange={(e) => setEditForm({ ...editForm, english_test: e.target.value })}>
+                <option value="">English test…</option>
+                {englishTests.filter((t) => t.active).map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
+              </select>
+              <input placeholder="Test score" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.english_test_score || ''} onChange={(e) => setEditForm({ ...editForm, english_test_score: e.target.value })} />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Guardian / emergency contact</div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Guardian name" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.guardian_name || ''} onChange={(e) => setEditForm({ ...editForm, guardian_name: e.target.value })} />
+              <input placeholder="Guardian phone" className="border border-line rounded-lg px-3 py-2 text-sm"
+                value={editForm.guardian_phone || ''} onChange={(e) => setEditForm({ ...editForm, guardian_phone: e.target.value })} />
+            </div>
+          </div>
+
+          <button type="submit" className="w-full bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">
+            Save changes
+          </button>
         </form>
       )}
 
-      <div className="grid md:grid-cols-2 gap-4 mt-4">
-        <InfoCard icon={ShieldAlert} title="Identity & Safety" accent="border-l-indigo-400">
-          <dl className="text-sm space-y-1.5">
-            <div className="flex justify-between"><dt className="text-slate-400">Aadhaar</dt><dd className="text-ink">{student.aadhaar_number || '—'}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-400">Emergency contact</dt><dd className="text-ink">{student.emergency_contact || '—'}</dd></div>
-          </dl>
-        </InfoCard>
-        <InfoCard icon={Users} title="Parent / Guardian" accent="border-l-indigo-400">
-          <dl className="text-sm space-y-1.5">
-            <div className="flex justify-between"><dt className="text-slate-400">Name</dt><dd className="text-ink">{student.parent_name || '—'}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-400">Mobile</dt><dd className="text-ink">{student.parent_mobile || '—'}</dd></div>
-          </dl>
-        </InfoCard>
+      <div className="mt-6">
+        <ActivityTimeline counselingHistory={student.counseling_history} applications={applications} enrollments={student.enrollments} />
       </div>
 
-      {student.lead_history && (
-        <p className="text-xs text-slate-400 mt-3">
-          Originally a lead from <span className="text-slate-600 font-medium">{student.lead_history.source || 'unknown source'}</span> ·
-          <Link to={`/leads/${student.lead_history.id}`} className="text-indigo-600 hover:underline ml-1">View original lead →</Link>
-        </p>
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Custom fields</h2>
+      <CustomFieldsPanel entityType="student" recordId={student.id} />
+
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Applications</h2>
+      <div className="bg-white border border-line rounded-xl overflow-hidden">
+        {applications.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No applications yet. <Link to="/applications" className="text-amber hover:underline">Start one</Link>.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {applications.map((a) => (
+                <tr key={a.id} className="border-b border-line/60 last:border-0">
+                  <td className="py-2.5 px-4 text-slate-400 text-xs font-mono">{a.application_number}</td>
+                  <td className="py-2.5 px-4 text-ink font-medium">{a.institution_name}</td>
+                  <td className="py-2.5 px-4 text-slate-500">{a.course_name || a.course || '—'}</td>
+                  <td className="py-2.5 px-4"><StatusBadge status={a.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="px-4 py-2 border-t border-line">
+          <Link to="/applications" className="text-xs text-amber hover:underline">Manage applications →</Link>
+        </div>
+      </div>
+
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Documents</h2>
+      <DocumentsChecklist studentId={student.id} />
+
+      <h2 className="text-sm font-semibold text-ink mt-8 mb-3">Counseling history</h2>
+      <div className="bg-white border border-line rounded-xl p-4">
+        {student.counseling_history.length === 0 ? (
+          <p className="text-sm text-slate-400">No counseling history recorded.</p>
+        ) : (
+          <div className="divide-y divide-line">
+            {student.counseling_history.map((h, i) => (
+              <div key={i} className="py-2 flex items-center justify-between text-sm">
+                <span className="text-ink">{h.institution_name}</span>
+                <StatusBadge status={h.counseling_status} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mt-8 mb-3">
+        <h2 className="text-sm font-semibold text-ink">Enrollment &amp; revenue</h2>
+        <button onClick={() => setShowForm((s) => !s)} className="bg-ink text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-ink-light">
+          {showForm ? 'Cancel' : '+ Enroll into institution'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={submitEnrollment} className="bg-white border border-line rounded-xl p-5 grid grid-cols-2 gap-4 mb-4">
+          <select required value={form.institution_id} onChange={(e) => pickInstitution(e.target.value)}
+            className="border border-line rounded-lg px-3 py-2 text-sm col-span-2">
+            <option value="">Select institution…</option>
+            {institutions.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name} ({i.commission_type === 'flat' ? `₹${i.commission_value} flat` : `${i.commission_value}%`})
+              </option>
+            ))}
+          </select>
+          {catalogCourses.length > 0 && (
+            <select value={form.course_id} onChange={(e) => pickCourse(e.target.value)}
+              className="border border-line rounded-lg px-3 py-2 text-sm col-span-2 bg-amber-soft">
+              <option value="">Pick from course catalog (optional)…</option>
+              {catalogCourses.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} · {c.level} · {c.currency} {c.tuition_fee}</option>
+              ))}
+            </select>
+          )}
+          <input placeholder="Course" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} />
+          <input placeholder="Total fee (₹)" type="number" className="border border-line rounded-lg px-3 py-2 text-sm"
+            value={form.fee_total} onChange={(e) => setForm({ ...form, fee_total: e.target.value })} />
+          <select className="border border-line rounded-lg px-3 py-2 text-sm col-span-2"
+            value={form.payment_status} onChange={(e) => setForm({ ...form, payment_status: e.target.value })}>
+            <option>Pending</option><option>Partial</option><option>Received</option>
+          </select>
+          <button type="submit" className="col-span-2 bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90">
+            Save enrollment
+          </button>
+        </form>
       )}
 
-      <div className="grid md:grid-cols-3 gap-4 mt-6">
-        <div className="bg-white border border-line rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-ink mb-3 flex items-center gap-1.5"><ClipboardList className="w-4 h-4 text-teal-600" /> Admissions</h2>
-          <div className="space-y-2">
-            {student.admissions.map((a) => (
-              <Link key={a.id} to={`/admissions/${a.id}`} className="block hover:bg-canvas -mx-2 px-2 py-2 rounded-lg border border-transparent hover:border-line">
-                <div className="text-sm text-ink font-medium">{a.course_name}</div>
-                <div className="flex items-center gap-2 mt-1">
-                  <StatusBadge status={a.admission_status} />
-                  <span className="text-xs text-slate-400">{a.admission_number}</span>
-                </div>
-              </Link>
+      <div className="bg-white border border-line rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 bg-canvas border-b border-line">
+              <th className="py-3 px-4 font-medium">Institution</th>
+              <th className="py-3 px-4 font-medium">Course</th>
+              <th className="py-3 px-4 font-medium text-right">Fee</th>
+              <th className="py-3 px-4 font-medium text-right">Our share</th>
+              <th className="py-3 px-4 font-medium">Payment</th>
+              <th className="py-3 px-4 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {student.enrollments.map((en) => (
+              editingEnrollment === en.id ? (
+                <tr key={en.id} className="border-b border-line/60 bg-canvas/40">
+                  <td className="py-2 px-4 text-ink font-medium">{en.institution_name}</td>
+                  <td className="py-2 px-4">
+                    <input className="border border-line rounded-lg px-2 py-1 text-xs w-full"
+                      value={enrollForm.course} onChange={(e) => setEnrollForm({ ...enrollForm, course: e.target.value })} />
+                  </td>
+                  <td className="py-2 px-4">
+                    <input type="number" className="border border-line rounded-lg px-2 py-1 text-xs w-full text-right"
+                      value={enrollForm.fee_total} onChange={(e) => setEnrollForm({ ...enrollForm, fee_total: e.target.value })} />
+                  </td>
+                  <td className="py-2 px-4">
+                    <div className="flex gap-1">
+                      <select className="border border-line rounded-lg px-1 py-1 text-xs"
+                        value={enrollForm.commission_type} onChange={(e) => setEnrollForm({ ...enrollForm, commission_type: e.target.value })}>
+                        <option value="percentage">%</option><option value="flat">₹</option>
+                      </select>
+                      <input type="number" className="border border-line rounded-lg px-2 py-1 text-xs w-16"
+                        value={enrollForm.commission_value} onChange={(e) => setEnrollForm({ ...enrollForm, commission_value: e.target.value })} />
+                    </div>
+                  </td>
+                  <td className="py-2 px-4">
+                    <select value={enrollForm.payment_status} onChange={(e) => setEnrollForm({ ...enrollForm, payment_status: e.target.value })}
+                      className="border border-line rounded-lg px-2 py-1 text-xs">
+                      <option>Pending</option><option>Partial</option><option>Received</option>
+                    </select>
+                  </td>
+                  <td className="py-2 px-4 whitespace-nowrap">
+                    <button onClick={() => saveEnrollmentEdit(en.id)} className="text-xs text-good font-medium hover:underline mr-2">Save</button>
+                    <button onClick={() => setEditingEnrollment(null)} className="text-xs text-slate-400 hover:underline">Cancel</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={en.id} className="border-b border-line/60">
+                  <td className="py-3 px-4 text-ink font-medium">{en.institution_name}</td>
+                  <td className="py-3 px-4 text-slate-500">{en.course}</td>
+                  <td className="py-3 px-4 text-right">{inr(en.fee_total)}</td>
+                  <td className="py-3 px-4 text-right font-medium text-ink">{inr(en.commission_amount)}</td>
+                  <td className="py-3 px-4">
+                    <select value={en.payment_status} onChange={(e) => updatePayment(en.id, e.target.value)}
+                      className="border border-line rounded-lg px-2 py-1 text-xs">
+                      <option>Pending</option><option>Partial</option><option>Received</option>
+                    </select>
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    <button onClick={() => startEditEnrollment(en)} className="text-xs text-ink hover:underline mr-2">Edit</button>
+                    <button onClick={() => setPaymentsOpen(paymentsOpen === en.id ? null : en.id)} className="text-xs text-amber hover:underline">
+                      {paymentsOpen === en.id ? 'Hide' : 'Payments'}
+                    </button>
+                  </td>
+                </tr>
+              )
             ))}
-            {student.admissions.length === 0 && <p className="text-sm text-slate-400">No admissions yet.</p>}
+            {student.enrollments.length === 0 && (
+              <tr><td colSpan={6} className="py-8 text-center text-slate-400">Not enrolled anywhere yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+        {student.enrollments.filter((en) => paymentsOpen === en.id).map((en) => (
+          <div key={en.id} className="border-t border-line p-3">
+            <PaymentHistory enrollmentId={en.id} />
           </div>
-        </div>
-
-        <div className="bg-white border border-line rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-ink mb-3 flex items-center gap-1.5"><Wallet className="w-4 h-4 text-amber" /> Payments</h2>
-          <div className="space-y-2">
-            {student.payments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between border border-line rounded-lg px-2.5 py-2">
-                <div>
-                  <div className="text-sm text-ink font-medium">{inr(p.amount)}</div>
-                  <div className="text-xs text-slate-400">Installment #{p.installment_number}</div>
-                </div>
-                <StatusBadge status={p.status} />
-              </div>
-            ))}
-            {student.payments.length === 0 && <p className="text-sm text-slate-400">No payments yet.</p>}
-          </div>
-        </div>
-
-        <div className="bg-white border border-line rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-ink mb-3 flex items-center gap-1.5"><Briefcase className="w-4 h-4 text-blue-600" /> Placements</h2>
-          <div className="space-y-2">
-            {student.placements.map((p) => (
-              <div key={p.id} className="border border-line rounded-lg px-2.5 py-2">
-                <div className="text-sm text-ink font-medium">{p.company_name}</div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <StatusBadge status={p.interview_status} />
-                  {p.result && <StatusBadge status={p.result} />}
-                </div>
-              </div>
-            ))}
-            {student.placements.length === 0 && <p className="text-sm text-slate-400">No placement activity yet.</p>}
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
