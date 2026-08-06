@@ -190,4 +190,22 @@ export const api = {
   // WhatsApp analytics
   waAnalytics: (params) => req('GET', '/whatsapp/analytics' + qs(params)),
   waAnalyticsCampaignOptions: () => req('GET', '/whatsapp/analytics/campaign-options'),
+
+  // Lead source integrations
+  leadSourceTypes: () => req('GET', '/lead-sources/source-types'),
+  listLeadSources: () => req('GET', '/lead-sources/sources'),
+  createLeadSource: (body) => req('POST', '/lead-sources/sources', body),
+  updateLeadSource: (id, body) => req('PUT', `/lead-sources/sources/${id}`, body),
+  regenerateLeadSourceKey: (id) => req('POST', `/lead-sources/sources/${id}/regenerate-key`),
+  deleteLeadSource: (id) => req('DELETE', `/lead-sources/sources/${id}`),
+  leadSourceLogs: (id) => req('GET', `/lead-sources/sources/${id}/logs`),
+  leadSourceEmbedSnippet: (id) => req('GET', `/lead-sources/sources/${id}/embed-snippet`),
+
+  // Facebook OAuth connect flow
+  fbConnectUrl: () => req('GET', '/lead-sources/facebook/connect'),
+  fbConnections: () => req('GET', '/lead-sources/facebook/connections'),
+  fbDeleteConnection: (id) => req('DELETE', `/lead-sources/facebook/connections/${id}`),
+  fbPages: (connectionId) => req('GET', `/lead-sources/facebook/connections/${connectionId}/pages`),
+  fbForms: (connectionId, pageId) => req('GET', `/lead-sources/facebook/connections/${connectionId}/pages/${pageId}/forms`),
+  fbConnectForm: (body) => req('POST', '/lead-sources/facebook/connect-form', body),
 };

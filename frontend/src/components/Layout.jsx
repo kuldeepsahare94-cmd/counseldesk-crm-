@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users as UsersIcon, GraduationCap, BookOpen, ClipboardList, Wallet, Building2, Briefcase, BarChart3, Settings as SettingsIcon, LogOut, UserCog, ShieldCheck, Palette, Menu, X, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Users as UsersIcon, GraduationCap, BookOpen, ClipboardList, Wallet, Building2, Briefcase, BarChart3, Settings as SettingsIcon, LogOut, UserCog, ShieldCheck, Palette, Menu, X, MessageCircle, Radio } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import GlobalSearch from './GlobalSearch';
 import NotificationBell from './NotificationBell';
@@ -9,6 +9,7 @@ import AssistantWidget from './AssistantWidget';
 const links = [
   { to: '/', label: 'Dashboard', end: true, icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: UsersIcon },
+  { to: '/lead-sources', label: 'Lead Sources', icon: Radio },
   { to: '/students', label: 'Students', icon: GraduationCap },
   { to: '/courses', label: 'Courses', icon: BookOpen },
   { to: '/admissions', label: 'Admissions', icon: ClipboardList },
