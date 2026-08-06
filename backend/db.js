@@ -6,623 +6,377 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
--- ===== Roles & Permissions =====
-CREATE TABLE IF NOT EXISTS roles (
+CREATE TABLE IF NOT EXISTS institutions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,      -- Super Admin / Admin / Counselor / Accountant / Placement Officer / Trainer
-  is_system INTEGER DEFAULT 0,    -- 1 = built-in role, cannot be deleted
+  name TEXT NOT NULL,
+  type TEXT,                -- School / College / University
+  city TEXT,
+  contact_person TEXT,
+  contact_phone TEXT,
+  contact_email TEXT,
+  commission_type TEXT DEFAULT 'percentage', -- percentage | flat
+  commission_value REAL DEFAULT 0,
+  notes TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
--- Per-role, per-module permission matrix
-CREATE TABLE IF NOT EXISTS role_permissions (
+CREATE TABLE IF NOT EXISTS inquiries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  role_id INTEGER NOT NULL,
-  module TEXT NOT NULL,           -- leads / students / courses / admissions / payments / companies / placements / reports / users / settings
-  can_view INTEGER DEFAULT 0,
-  can_create INTEGER DEFAULT 0,
-  can_edit INTEGER DEFAULT 0,
-  can_delete INTEGER DEFAULT 0,
-  can_export INTEGER DEFAULT 0,
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
-  UNIQUE(role_id, module)
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  course_interest TEXT,
+  source TEXT,               -- Walk-in / Referral / Facebook / etc.
+  status TEXT DEFAULT 'New', -- New / In Counseling / Converted / Dropped
+  counselor TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Many-to-many: one inquiry can be counseled for many institutions
+CREATE TABLE IF NOT EXISTS inquiry_institutions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  inquiry_id INTEGER NOT NULL,
+  institution_id INTEGER NOT NULL,
+  status TEXT DEFAULT 'Counseling', -- Counseling / Applied / Offer / Rejected / Not Interested
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (inquiry_id) REFERENCES inquiries(id) ON DELETE CASCADE,
+  FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE,
+  UNIQUE(inquiry_id, institution_id)
+);
+
+-- Once counseling completes, inquiry converts into a student
+CREATE TABLE IF NOT EXISTS students (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  inquiry_id INTEGER UNIQUE,
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  converted_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (inquiry_id) REFERENCES inquiries(id) ON DELETE SET NULL
+);
+
+-- Student's final onboarded institution + revenue tracking
+CREATE TABLE IF NOT EXISTS enrollments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  institution_id INTEGER NOT NULL,
+  course TEXT,
+  fee_total REAL DEFAULT 0,          -- total fee student pays institution
+  commission_type TEXT DEFAULT 'percentage',
+  commission_value REAL DEFAULT 0,   -- % or flat, copied from institution at time of enrollment
+  commission_amount REAL DEFAULT 0,  -- computed consultancy share
+  payment_status TEXT DEFAULT 'Pending', -- Pending / Partial / Received
+  status TEXT DEFAULT 'Active',      -- Active / Cancelled / Completed
+  enrolled_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS followups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  inquiry_id INTEGER NOT NULL,
+  type TEXT,                -- call / whatsapp / sms / email
+  message TEXT,             -- what was sent (e.g. WhatsApp text) or plan notes
+  disposition TEXT,         -- Interested / Not Interested / Call Back Later / Not Reachable / Wrong Number / Converted / No Response / Other
+  remark TEXT,              -- free-text notes from the counselor
+  status TEXT DEFAULT 'Done',   -- Planned / Done / Missed
+  scheduled_at TEXT,        -- when a Planned follow-up is due (null if logged as already done)
+  completed_at TEXT,        -- when it was marked Done
+  sent_by TEXT,
+  sent_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (inquiry_id) REFERENCES inquiries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ii_inquiry ON inquiry_institutions(inquiry_id);
+CREATE INDEX IF NOT EXISTS idx_ii_institution ON inquiry_institutions(institution_id);
+CREATE INDEX IF NOT EXISTS idx_enroll_institution ON enrollments(institution_id);
+CREATE INDEX IF NOT EXISTS idx_followup_inquiry ON followups(inquiry_id);
+
+-- Custom fields: lets the consultancy add their own fields/dropdowns without code changes
+CREATE TABLE IF NOT EXISTS custom_fields (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,   -- inquiry | institution | student | enrollment
+  label TEXT NOT NULL,
+  field_type TEXT NOT NULL DEFAULT 'text', -- text | number | date | dropdown
+  options TEXT,                 -- JSON array string, only for dropdown
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS custom_field_values (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  field_id INTEGER NOT NULL,
+  record_id INTEGER NOT NULL,
+  value TEXT,
+  FOREIGN KEY (field_id) REFERENCES custom_fields(id) ON DELETE CASCADE,
+  UNIQUE(field_id, record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cfv_field ON custom_field_values(field_id);
+CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_values(record_id);
+CREATE INDEX IF NOT EXISTS idx_cf_entity ON custom_fields(entity_type);
+
+-- Users who can log in to the CRM
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   full_name TEXT,
-  role_id INTEGER,
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE SET NULL
+  active INTEGER NOT NULL DEFAULT 1,  -- 1 = can log in, 0 = blocked
+  created_at TEXT DEFAULT (datetime('now'))
 );
 
--- ===== Master option lists (Lead Source, Payment Mode, etc.) =====
+-- ===== Master Data (Phase 1) =====
+
+CREATE TABLE IF NOT EXISTS countries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  code TEXT
+);
+
+CREATE TABLE IF NOT EXISTS states (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  country_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  state_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  FOREIGN KEY (state_id) REFERENCES states(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS universities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  country_id INTEGER,
+  city TEXT,
+  website TEXT,
+  notes TEXT,
+  active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS courses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  university_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  level TEXT,                 -- Diploma / Bachelors / Masters / PhD
+  duration_months INTEGER,
+  currency TEXT DEFAULT 'USD',
+  tuition_fee REAL,
+  active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS intakes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  label TEXT NOT NULL,        -- e.g. "Fall 2026"
+  month INTEGER,
+  year INTEGER,
+  active INTEGER DEFAULT 1
+);
+
+-- Generic canonical option lists (Lead Sources, English Tests, Document Types,
+-- Payment Modes, Student Status, Application Status, Priority, Tags)
 CREATE TABLE IF NOT EXISTS master_options (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  list_type TEXT NOT NULL,    -- lead_source | qualification | payment_mode
+  list_type TEXT NOT NULL,    -- lead_source | english_test | document_type | payment_mode | student_status | application_status | priority | tag
   label TEXT NOT NULL,
-  color TEXT,
+  color TEXT,                 -- optional hex, used for status/priority/tag badges
   sort_order INTEGER DEFAULT 0,
   active INTEGER DEFAULT 1
 );
+
+CREATE INDEX IF NOT EXISTS idx_states_country ON states(country_id);
+CREATE INDEX IF NOT EXISTS idx_cities_state ON cities(state_id);
+CREATE INDEX IF NOT EXISTS idx_courses_university ON courses(university_id);
 CREATE INDEX IF NOT EXISTS idx_master_options_type ON master_options(list_type);
+`);
 
--- ===== 1. Leads =====
-CREATE TABLE IF NOT EXISTS leads (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  student_name TEXT NOT NULL,
-  mobile TEXT,
-  alternate_mobile TEXT,
-  email TEXT,
-  gender TEXT,
-  date_of_birth TEXT,
-  address TEXT,
-  city TEXT,
-  qualification TEXT,
-  source TEXT,
-  interested_course_id INTEGER,
-  status TEXT DEFAULT 'New',       -- New / Contacted / Interested / Follow-up / Converted / Dropped / Not Interested
-  follow_up_date TEXT,
-  assigned_counselor TEXT,
-  remarks TEXT,
-  converted_student_id INTEGER,    -- set once converted, lead history preserved
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (interested_course_id) REFERENCES courses(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
-CREATE INDEX IF NOT EXISTS idx_leads_followup ON leads(follow_up_date);
+// Safe migration: if an older followups table exists without these columns, add them.
+const followupCols = db.prepare("PRAGMA table_info(followups)").all().map((c) => c.name);
+const addColIfMissing = (col, def) => {
+  if (!followupCols.includes(col)) {
+    try { db.exec(`ALTER TABLE followups ADD COLUMN ${col} ${def}`); } catch (e) { /* ignore */ }
+  }
+};
+addColIfMissing('disposition', 'TEXT');
+addColIfMissing('remark', 'TEXT');
+addColIfMissing('status', "TEXT DEFAULT 'Done'");
+addColIfMissing('scheduled_at', 'TEXT');
+addColIfMissing('completed_at', 'TEXT');
 
-CREATE TABLE IF NOT EXISTS lead_activities (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  lead_id INTEGER NOT NULL,
-  type TEXT,                       -- call / whatsapp / email / note / status_change
-  note TEXT,
-  created_by TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_lead_activities_lead ON lead_activities(lead_id);
+// Phase 2: optional lookups from Institutions -> Master Data Universities,
+// and Enrollments -> Master Data Courses. Nullable, additive, non-breaking.
+const institutionCols = db.prepare("PRAGMA table_info(institutions)").all().map((c) => c.name);
+if (!institutionCols.includes('university_id')) {
+  try { db.exec('ALTER TABLE institutions ADD COLUMN university_id INTEGER REFERENCES universities(id)'); } catch (e) { /* ignore */ }
+}
+const enrollmentCols = db.prepare("PRAGMA table_info(enrollments)").all().map((c) => c.name);
+if (!enrollmentCols.includes('course_id')) {
+  try { db.exec('ALTER TABLE enrollments ADD COLUMN course_id INTEGER REFERENCES courses(id)'); } catch (e) { /* ignore */ }
+}
+const inquiryCols = db.prepare("PRAGMA table_info(inquiries)").all().map((c) => c.name);
+if (!inquiryCols.includes('priority')) {
+  try { db.exec("ALTER TABLE inquiries ADD COLUMN priority TEXT"); } catch (e) { /* ignore */ }
+}
 
--- ===== 2. Students (master) =====
-CREATE TABLE IF NOT EXISTS students (
+// ===== Phase 3: Applications (the link between Student and Enrollment) =====
+db.exec(`
+CREATE TABLE IF NOT EXISTS applications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  lead_id INTEGER UNIQUE,
-  photo TEXT,
-  student_name TEXT NOT NULL,
-  mobile TEXT,
-  alternate_mobile TEXT,
-  email TEXT,
-  gender TEXT,
-  date_of_birth TEXT,
-  address TEXT,
-  qualification TEXT,
-  aadhaar_number TEXT,
-  parent_name TEXT,
-  parent_mobile TEXT,
-  emergency_contact TEXT,
-  status TEXT DEFAULT 'Active',    -- Active / Inactive
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL
-);
-
--- ===== 3. Courses (master) =====
-CREATE TABLE IF NOT EXISTS courses (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  course_name TEXT NOT NULL,
-  course_code TEXT UNIQUE,
-  category TEXT,
-  description TEXT,
-  course_tenure TEXT,              -- '1 Month' | '2 Months' | ... (dropdown)
-  total_course_fees REAL DEFAULT 0,
-  emi_count INTEGER DEFAULT 1,
-  status TEXT DEFAULT 'Active',    -- Active / Inactive
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
--- ===== 4. Admissions =====
-CREATE TABLE IF NOT EXISTS admissions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  admission_number TEXT UNIQUE,
   student_id INTEGER NOT NULL,
-  course_id INTEGER NOT NULL,
-  admission_date TEXT DEFAULT (datetime('now')),
-  period TEXT,
-  admission_status TEXT DEFAULT 'Active',   -- Active / Hold / Completed / Cancelled / Dropped
-  admission_stage TEXT DEFAULT 'New',       -- New / Documents Pending / Fees Pending / Admitted / Ongoing / Completed
-  batch TEXT,
-  counselor TEXT,
-  course_tenure TEXT,               -- auto-copied from course at admission time
-  total_course_fees REAL DEFAULT 0, -- auto-copied
-  emi_count INTEGER DEFAULT 1,      -- auto-copied
-  remarks TEXT,
+  institution_id INTEGER NOT NULL,
+  course_id INTEGER,
+  course TEXT,
+  intake_id INTEGER,
+  status TEXT NOT NULL DEFAULT 'Draft',   -- Draft / Submitted / Under Review / Offer Received / Accepted / Rejected / Withdrawn
+  submitted_at TEXT,
+  decision_at TEXT,
+  notes TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE RESTRICT
+  FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE,
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
+  FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE SET NULL
 );
-CREATE INDEX IF NOT EXISTS idx_admissions_student ON admissions(student_id);
-CREATE INDEX IF NOT EXISTS idx_admissions_course ON admissions(course_id);
-CREATE INDEX IF NOT EXISTS idx_admissions_status ON admissions(admission_status);
+CREATE INDEX IF NOT EXISTS idx_applications_student ON applications(student_id);
+CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+`);
 
--- ===== 5. Payments =====
+// Optional back-link from an Enrollment to the Application it came from (additive, nullable)
+const enrollmentColsForApp = db.prepare("PRAGMA table_info(enrollments)").all().map((c) => c.name);
+if (!enrollmentColsForApp.includes('application_id')) {
+  try { db.exec('ALTER TABLE enrollments ADD COLUMN application_id INTEGER REFERENCES applications(id)'); } catch (e) { /* ignore */ }
+}
+
+// ===== Phase 4: Documents, Tasks, Payments =====
+
+// Documents: a checklist/tracker per student (not file upload — no cloud storage configured yet)
+db.exec(`
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  document_type TEXT NOT NULL,   -- pulled from master_options list_type=document_type
+  status TEXT NOT NULL DEFAULT 'Pending',  -- Pending / Received / Verified / Rejected
+  notes TEXT,
+  received_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_documents_student ON documents(student_id);
+CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT,
+  entity_type TEXT,     -- inquiry / student / application (nullable — a task can be general)
+  entity_id INTEGER,
+  assigned_to TEXT,      -- username
+  priority TEXT,         -- from master_options list_type=priority
+  status TEXT NOT NULL DEFAULT 'To Do',  -- To Do / In Progress / Done
+  due_date TEXT,
+  completed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
+
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  payment_number TEXT UNIQUE,
-  payment_date TEXT,
-  student_id INTEGER NOT NULL,
-  admission_id INTEGER NOT NULL,
-  course_id INTEGER NOT NULL,
-  installment_number INTEGER DEFAULT 1,
-  amount REAL DEFAULT 0,
-  payment_mode TEXT,
-  transaction_number TEXT,
-  status TEXT DEFAULT 'Pending',   -- Pending / Paid / Partial / Failed
-  receipt_institute TEXT,          -- 'A' | 'B' — which template was used for the receipt, once generated
-  remarks TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-  FOREIGN KEY (admission_id) REFERENCES admissions(id) ON DELETE CASCADE,
-  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE RESTRICT
-);
-CREATE INDEX IF NOT EXISTS idx_payments_admission ON payments(admission_id);
-CREATE INDEX IF NOT EXISTS idx_payments_student ON payments(student_id);
-CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
-
--- Configurable receipt templates (admin panel editable) — placeholders until Kuldeep supplies real details
-CREATE TABLE IF NOT EXISTS receipt_templates (
-  id TEXT PRIMARY KEY,             -- 'A' | 'B'
-  institute_name TEXT,
-  logo_url TEXT,
-  address TEXT,
-  footer_text TEXT,
-  gst_details TEXT,
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-
--- ===== 6. Companies =====
-CREATE TABLE IF NOT EXISTS companies (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  company_name TEXT NOT NULL,
-  industry TEXT,
-  hr_name TEXT,
-  hr_mobile TEXT,
-  email TEXT,
-  website TEXT,
-  address TEXT,
-  contact_person TEXT,
-  status TEXT DEFAULT 'Active',
+  enrollment_id INTEGER NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  payment_mode TEXT,     -- from master_options list_type=payment_mode
+  paid_at TEXT DEFAULT (datetime('now')),
   notes TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
--- ===== 7. Placements =====
-CREATE TABLE IF NOT EXISTS placements (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  student_id INTEGER NOT NULL,
-  admission_id INTEGER,
-  course_id INTEGER,
-  company_id INTEGER NOT NULL,
-  interview_date TEXT,
-  interview_round TEXT,
-  interview_status TEXT DEFAULT 'Scheduled',  -- Scheduled / Rescheduled / Attended / Cancelled
-  result TEXT,                                 -- Selected / Rejected / Waiting / Hold
-  package TEXT,
-  joining_date TEXT,
-  remarks TEXT,
   created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-  FOREIGN KEY (admission_id) REFERENCES admissions(id) ON DELETE SET NULL,
-  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
-  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+  FOREIGN KEY (enrollment_id) REFERENCES enrollments(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_placements_student ON placements(student_id);
-CREATE INDEX IF NOT EXISTS idx_placements_company ON placements(company_id);
-CREATE INDEX IF NOT EXISTS idx_placements_status ON placements(interview_status);
+CREATE INDEX IF NOT EXISTS idx_payments_enrollment ON payments(enrollment_id);
+`);
 
--- Notifications: read-tracking only, items are computed live (same pattern as base project)
+// ===== Notification Center =====
+// Notifications themselves aren't stored — they're computed live from
+// existing data (follow-ups, applications, payments, documents) so they're
+// always accurate. This table only tracks which ones have been read.
+db.exec(`
 CREATE TABLE IF NOT EXISTS notification_reads (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   notification_key TEXT NOT NULL UNIQUE,
   read_at TEXT DEFAULT (datetime('now'))
 );
-
--- ===== AI Chatbot: every request and every tool the assistant ran, per user =====
-CREATE TABLE IF NOT EXISTS ai_conversations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  title TEXT,
-  history_json TEXT DEFAULT '[]',   -- full Claude-format message history (source of truth for the model)
-  pending_json TEXT,                -- a write tool call awaiting user confirmation, or NULL
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS ai_messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  conversation_id INTEGER NOT NULL,
-  role TEXT NOT NULL,          -- user | assistant
-  content TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
-);
-
--- One row per tool the assistant actually ran (read or write), for the security audit trail.
-CREATE TABLE IF NOT EXISTS ai_action_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  conversation_id INTEGER,
-  tool_name TEXT NOT NULL,
-  module TEXT,
-  is_write INTEGER DEFAULT 0,
-  input_json TEXT,
-  result_summary TEXT,
-  status TEXT DEFAULT 'success',  -- success | denied | error
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_ai_action_log_user ON ai_action_log(user_id);
-
--- ============================================================================
--- WhatsApp Business Integration (Phase 1: providers + templates)
--- ============================================================================
-
--- One row per connected WhatsApp Business Account. Credentials are encrypted
--- at rest (see services/whatsapp/crypto.js) — never stored or returned in plaintext.
-CREATE TABLE IF NOT EXISTS whatsapp_providers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,                  -- display name, e.g. "Main Business Number"
-  provider_type TEXT NOT NULL,         -- meta_cloud | gupshup | wati | aisensy | interakt
-  credentials_encrypted TEXT NOT NULL, -- JSON blob, AES-256-GCM encrypted
-  webhook_url TEXT,
-  webhook_secret_encrypted TEXT,
-  is_default INTEGER DEFAULT 0,
-  status TEXT DEFAULT 'Not Tested',    -- Not Tested | Connected | Failed
-  last_test_at TEXT,
-  last_test_result TEXT,
-  last_sync_at TEXT,
-  created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS whatsapp_templates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  provider_id INTEGER NOT NULL,
-  template_name TEXT NOT NULL,
-  language TEXT DEFAULT 'en',
-  status TEXT,                         -- APPROVED | PENDING | REJECTED (as reported by provider)
-  category TEXT,                       -- MARKETING | UTILITY | AUTHENTICATION
-  header_text TEXT,
-  body_text TEXT,
-  footer_text TEXT,
-  variables_json TEXT DEFAULT '[]',    -- ["1","2",...] or named vars, detected from body/header
-  buttons_json TEXT DEFAULT '[]',
-  media_type TEXT,                     -- none | image | video | document
-  raw_json TEXT,                       -- full provider payload, for debugging/future fields
-  synced_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (provider_id) REFERENCES whatsapp_providers(id) ON DELETE CASCADE,
-  UNIQUE(provider_id, template_name, language)
-);
-CREATE INDEX IF NOT EXISTS idx_wa_templates_provider ON whatsapp_templates(provider_id);
-CREATE INDEX IF NOT EXISTS idx_wa_templates_category ON whatsapp_templates(category);
-
--- Every connect/test/sync/send/webhook action, for the required audit trail.
-CREATE TABLE IF NOT EXISTS whatsapp_audit_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER,
-  provider_id INTEGER,
-  action TEXT NOT NULL,                -- connect | test | sync_templates | send | webhook_received | error
-  detail TEXT,
-  status TEXT DEFAULT 'success',       -- success | error | denied
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-  FOREIGN KEY (provider_id) REFERENCES whatsapp_providers(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_wa_audit_provider ON whatsapp_audit_log(provider_id);
 `);
 
-// ===== Seed default roles & permission matrix =====
-const roleCount = db.prepare('SELECT COUNT(*) c FROM roles').get().c;
-if (roleCount === 0) {
-  const modules = ['leads', 'students', 'courses', 'admissions', 'payments', 'companies', 'placements', 'reports', 'users', 'settings', 'assistant', 'whatsapp', 'lead_sources'];
-  const insertRole = db.prepare('INSERT INTO roles (name, is_system) VALUES (?,1)');
-  const insertPerm = db.prepare(`INSERT INTO role_permissions (role_id, module, can_view, can_create, can_edit, can_delete, can_export) VALUES (?,?,?,?,?,?,?)`);
+// Student profile fields relevant to a study-abroad consultancy — additive,
+// nullable, safe on top of existing student records.
+const studentCols = db.prepare("PRAGMA table_info(students)").all().map((c) => c.name);
+const addStudentCol = (col, def) => {
+  if (!studentCols.includes(col)) {
+    try { db.exec(`ALTER TABLE students ADD COLUMN ${col} ${def}`); } catch (e) { /* ignore */ }
+  }
+};
+addStudentCol('date_of_birth', 'TEXT');
+addStudentCol('gender', 'TEXT');
+addStudentCol('address', 'TEXT');
+addStudentCol('city', 'TEXT');
+addStudentCol('country_id', 'INTEGER REFERENCES countries(id)');
+addStudentCol('passport_number', 'TEXT');
+addStudentCol('highest_qualification', 'TEXT');
+addStudentCol('academic_percentage', 'TEXT');
+addStudentCol('english_test', 'TEXT');
+addStudentCol('english_test_score', 'TEXT');
+addStudentCol('alternate_phone', 'TEXT');
+addStudentCol('guardian_name', 'TEXT');
+addStudentCol('guardian_phone', 'TEXT');
 
-  // full = everything on; scoped = per-role default matrix per the spec
-  const fullAccess = () => modules.reduce((acc, m) => ({ ...acc, [m]: [1, 1, 1, 1, 1] }), {});
-  const roleDefaults = {
-    'Super Admin': fullAccess(),
-    'Admin': fullAccess(),
-    'Counselor': {
-      leads: [1, 1, 1, 0, 1], students: [1, 1, 1, 0, 0], courses: [1, 0, 0, 0, 0],
-      admissions: [1, 1, 1, 0, 0], payments: [1, 0, 0, 0, 0], companies: [0, 0, 0, 0, 0],
-      placements: [0, 0, 0, 0, 0], reports: [1, 0, 0, 0, 1], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 1, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
-    },
-    'Accountant': {
-      leads: [0, 0, 0, 0, 0], students: [1, 0, 0, 0, 0], courses: [1, 0, 0, 0, 0],
-      admissions: [1, 0, 0, 0, 0], payments: [1, 1, 1, 0, 1], companies: [0, 0, 0, 0, 0],
-      placements: [0, 0, 0, 0, 0], reports: [1, 0, 0, 0, 1], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 1, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
-    },
-    'Placement Officer': {
-      leads: [0, 0, 0, 0, 0], students: [1, 0, 0, 0, 0], courses: [1, 0, 0, 0, 0],
-      admissions: [1, 0, 0, 0, 0], payments: [0, 0, 0, 0, 0], companies: [1, 1, 1, 0, 1],
-      placements: [1, 1, 1, 0, 1], reports: [1, 0, 0, 0, 1], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 1, 0, 0, 0], whatsapp: [1, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
-    },
-    'Trainer': {
-      leads: [0, 0, 0, 0, 0], students: [1, 0, 0, 0, 0], courses: [1, 0, 0, 0, 0],
-      admissions: [1, 0, 0, 0, 0], payments: [0, 0, 0, 0, 0], companies: [0, 0, 0, 0, 0],
-      placements: [1, 0, 0, 0, 0], reports: [0, 0, 0, 0, 0], users: [0, 0, 0, 0, 0], settings: [0, 0, 0, 0, 0],
-      assistant: [1, 0, 0, 0, 0], whatsapp: [0, 0, 0, 0, 0], lead_sources: [0, 0, 0, 0, 0],
-    },
-  };
+db.exec(`CREATE INDEX IF NOT EXISTS idx_followup_status ON followups(status);
+CREATE INDEX IF NOT EXISTS idx_followup_scheduled ON followups(scheduled_at);`);
 
-  const tx = db.transaction(() => {
-    for (const [roleName, matrix] of Object.entries(roleDefaults)) {
-      const info = insertRole.run(roleName);
-      const roleId = info.lastInsertRowid;
-      for (const mod of modules) {
-        const [v, c, e, d, x] = matrix[mod] || [0, 0, 0, 0, 0];
-        insertPerm.run(roleId, mod, v, c, e, d, x);
-      }
-    }
-  });
-  tx();
-}
-
-// Seed default admin user
+// Seed a default admin account the first time the app runs, so there's
+// always at least one way in. Change this password immediately after login.
 const bcrypt = require('bcryptjs');
 const userCount = db.prepare('SELECT COUNT(*) c FROM users').get().c;
 if (userCount === 0) {
-  const superAdminRole = db.prepare("SELECT id FROM roles WHERE name = 'Super Admin'").get();
   const hash = bcrypt.hashSync('admin123', 10);
-  db.prepare('INSERT INTO users (username, password_hash, full_name, role_id, active) VALUES (?,?,?,?,1)')
-    .run('admin', hash, 'Administrator', superAdminRole ? superAdminRole.id : null);
+  db.prepare('INSERT INTO users (username, password_hash, full_name, active) VALUES (?,?,?,1)')
+    .run('admin', hash, 'Administrator');
   console.log('Seeded default login -> username: admin / password: admin123 (change this immediately)');
 }
 
-// Seed master option lists
+// Seed default master data option lists the first time (only if a list_type has zero rows)
 const seedOptions = {
-  lead_source: ['Walk-in', 'Referral', 'Facebook', 'Instagram', 'Google', 'Website', 'Other'],
-  qualification: ['10th', '12th', 'Diploma', 'Graduate', 'Post Graduate', 'Other'],
+  lead_source: ['Walk-in', 'Referral', 'Facebook', 'Google', 'Website', 'Agent', 'Other'],
+  english_test: ['IELTS', 'TOEFL', 'PTE', 'Duolingo', 'Not Required'],
+  document_type: ['Passport', 'Academic Transcripts', 'LOR', 'SOP', 'Resume/CV', 'Bank Statement', 'English Test Score', 'Photo', 'Visa Copy'],
   payment_mode: ['Cash', 'UPI', 'Bank Transfer', 'Card', 'Cheque', 'Other'],
+  student_status: ['New', 'Profile Evaluation', 'Counselling', 'Application', 'Documents', 'Payment', 'Admission', 'Enrolled', 'Dropped'],
+  application_status: ['Draft', 'Submitted', 'Under Review', 'Offer Received', 'Accepted', 'Rejected', 'Withdrawn'],
+  priority: ['Low', 'Medium', 'High', 'Urgent'],
+  tag: ['Hot Lead', 'VIP', 'Scholarship', 'Urgent'],
 };
 const insertOption = db.prepare('INSERT INTO master_options (list_type, label, sort_order) VALUES (?,?,?)');
 for (const [listType, labels] of Object.entries(seedOptions)) {
   const count = db.prepare('SELECT COUNT(*) c FROM master_options WHERE list_type=?').get(listType).c;
-  if (count === 0) labels.forEach((label, i) => insertOption.run(listType, label, i));
+  if (count === 0) {
+    labels.forEach((label, i) => insertOption.run(listType, label, i));
+  }
 }
 
-// Seed placeholder receipt templates (Institute A / B) — Kuldeep will fill in real details later
-const receiptCount = db.prepare('SELECT COUNT(*) c FROM receipt_templates').get().c;
-if (receiptCount === 0) {
-  const insertReceipt = db.prepare(`INSERT INTO receipt_templates (id, institute_name, logo_url, address, footer_text, gst_details) VALUES (?,?,?,?,?,?)`);
-  insertReceipt.run('A', '[Institute A Name — configure in Settings]', '', '[Institute A Address]', '[Institute A Footer / Terms]', '[Institute A GSTIN]');
-  insertReceipt.run('B', '[Institute B Name — configure in Settings]', '', '[Institute B Address]', '[Institute B Footer / Terms]', '[Institute B GSTIN]');
+// Opt-in demo data — only runs when SEED_DEMO_DATA=true is set as an env var,
+// and only if there's no data yet (see seedDemo.js for full safety notes).
+if (process.env.SEED_DEMO_DATA === 'true') {
+  try {
+    require('./seedDemo').seedDemoData(db);
+  } catch (e) {
+    console.error('Demo seed failed:', e.message);
+  }
 }
-
-// ===== WhatsApp Workflow Automation (Phase 2) =====
-db.exec(`
-CREATE TABLE IF NOT EXISTS whatsapp_workflows (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  event_type TEXT NOT NULL,
-  provider_id INTEGER NOT NULL,
-  template_id INTEGER NOT NULL,
-  mappings_json TEXT DEFAULT '{}',     -- {"1": "student_name", "2": "assigned_counselor"}
-  send_mode TEXT DEFAULT 'immediate',  -- immediate | scheduled
-  schedule_delay_minutes INTEGER DEFAULT 0,
-  overdue_days INTEGER DEFAULT 7,      -- only used by payment_overdue
-  active INTEGER DEFAULT 0,            -- workflows start inactive until mappings are validated
-  created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (provider_id) REFERENCES whatsapp_providers(id) ON DELETE CASCADE,
-  FOREIGN KEY (template_id) REFERENCES whatsapp_templates(id) ON DELETE CASCADE,
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_wa_workflows_event ON whatsapp_workflows(event_type);
-
--- One row per attempted send. For realtime events (status changes, payments, etc.)
--- repeat rows are expected and correct — a lead can change status twice and should
--- notify twice. Duplicate-prevention for the four *scheduled* events (follow-up
--- missed, payment overdue, birthday, workshop reminder) is enforced separately by
--- an anti-join in the scheduled-check query itself (routes/whatsappWorkflows.js) —
--- "has this workflow already messaged this exact entity, ever" — not by a DB
--- constraint here, since that would also wrongly block legitimate realtime repeats.
-CREATE TABLE IF NOT EXISTS whatsapp_workflow_runs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  workflow_id INTEGER NOT NULL,
-  event_type TEXT NOT NULL,
-  entity_type TEXT NOT NULL,          -- lead | student | admission | payment | placement
-  entity_id INTEGER NOT NULL,
-  phone_number TEXT,
-  status TEXT DEFAULT 'sent',         -- sent | failed | skipped
-  provider_message_id TEXT,
-  error TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (workflow_id) REFERENCES whatsapp_workflows(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_wa_workflow_runs_workflow ON whatsapp_workflow_runs(workflow_id);
-CREATE INDEX IF NOT EXISTS idx_wa_workflow_runs_entity ON whatsapp_workflow_runs(entity_type, entity_id);
-`);
-
-// ===== WhatsApp Bulk Campaigns (Phase 3) =====
-db.exec(`
-CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  recipient_source TEXT NOT NULL,      -- leads | students | custom
-  filters_json TEXT DEFAULT '{}',
-  provider_id INTEGER NOT NULL,
-  template_id INTEGER NOT NULL,
-  mappings_json TEXT DEFAULT '{}',
-  send_mode TEXT DEFAULT 'immediate',  -- immediate | scheduled
-  scheduled_at TEXT,
-  rate_limit_delay_ms INTEGER DEFAULT 1000,  -- pause between sends, to respect provider rate limits
-  status TEXT DEFAULT 'draft',         -- draft | scheduled | sending | completed | failed
-  created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  started_at TEXT,
-  completed_at TEXT,
-  FOREIGN KEY (provider_id) REFERENCES whatsapp_providers(id) ON DELETE CASCADE,
-  FOREIGN KEY (template_id) REFERENCES whatsapp_templates(id) ON DELETE CASCADE,
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-);
-
--- Resolved at campaign-creation time (not send time) so "Preview Personalised
--- Messages" shows the exact recipient list and exact rendered text before anyone commits to sending.
-CREATE TABLE IF NOT EXISTS whatsapp_campaign_recipients (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  campaign_id INTEGER NOT NULL,
-  entity_type TEXT,                   -- lead | student | custom
-  entity_id INTEGER,
-  name TEXT,
-  mobile TEXT NOT NULL,
-  variables_json TEXT DEFAULT '{}',
-  status TEXT DEFAULT 'pending',       -- pending | sent | delivered | read | failed | opted_out
-  provider_message_id TEXT,
-  error TEXT,
-  sent_at TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (campaign_id) REFERENCES whatsapp_campaigns(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_campaign ON whatsapp_campaign_recipients(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_status ON whatsapp_campaign_recipients(status);
-
--- CRM-wide opt-out list, keyed by phone number — checked before EVERY send
--- (campaigns and workflows alike), not just per-campaign.
-CREATE TABLE IF NOT EXISTS whatsapp_optouts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  phone_number TEXT NOT NULL UNIQUE,
-  reason TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-`);
-
-// ===== Conversation Management (Phase 4) =====
-db.exec(`
-CREATE TABLE IF NOT EXISTS whatsapp_conversations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  provider_id INTEGER NOT NULL,
-  phone_number TEXT NOT NULL,
-  entity_type TEXT,                  -- lead | student | null (no CRM match found yet)
-  entity_id INTEGER,
-  entity_name TEXT,                  -- denormalized for fast list rendering even if the lead/student is later deleted
-  assigned_to TEXT,                  -- counselor name, copied from the matched lead/student at match time
-  last_message_at TEXT,
-  last_message_preview TEXT,
-  unread_count INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (provider_id) REFERENCES whatsapp_providers(id) ON DELETE CASCADE,
-  UNIQUE(provider_id, phone_number)
-);
-CREATE INDEX IF NOT EXISTS idx_wa_conversations_entity ON whatsapp_conversations(entity_type, entity_id);
-
-CREATE TABLE IF NOT EXISTS whatsapp_messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  conversation_id INTEGER NOT NULL,
-  direction TEXT NOT NULL,           -- inbound | outbound
-  body TEXT,
-  media_type TEXT,
-  provider_message_id TEXT,
-  status TEXT DEFAULT 'received',    -- received | sent | delivered | read | failed
-  sent_by INTEGER,                   -- user id, for outbound replies sent from the CRM
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
-  FOREIGN KEY (sent_by) REFERENCES users(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_wa_messages_conversation ON whatsapp_messages(conversation_id);
-CREATE INDEX IF NOT EXISTS idx_wa_messages_provider_msg_id ON whatsapp_messages(provider_message_id);
-`);
-
-// ===== Safe migration: add delivery-tracking columns to existing tables =====
-// This CRM is already live, so we can't just redefine these tables — CREATE
-// TABLE IF NOT EXISTS won't add columns to a table that already exists. This
-// checks first and is a no-op if the columns are already there.
-function ensureColumn(table, column, ddl) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-}
-ensureColumn('whatsapp_campaign_recipients', 'delivered_at', 'delivered_at TEXT');
-ensureColumn('whatsapp_campaign_recipients', 'read_at', 'read_at TEXT');
-ensureColumn('whatsapp_workflow_runs', 'delivered_at', 'delivered_at TEXT');
-ensureColumn('whatsapp_workflow_runs', 'read_at', 'read_at TEXT');
-
-// ============================================================================
-// Lead Source Integrations — "plug and play" lead capture, same architecture
-// pattern as WhatsApp: one hub, pluggable connectors underneath.
-// ============================================================================
-db.exec(`
-CREATE TABLE IF NOT EXISTS lead_sources (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  source_type TEXT NOT NULL,          -- website_form | zapier_webhook | facebook_leads | instagram_leads | linkedin_leads
-  api_key TEXT NOT NULL UNIQUE,        -- secret in the capture URL — treat like a password
-  status TEXT DEFAULT 'Active',        -- Active | Inactive
-  default_status TEXT DEFAULT 'New',
-  default_counselor TEXT,
-  default_course_id INTEGER,
-  field_mapping_json TEXT DEFAULT '{}', -- {"incoming_field_name": "crm_lead_column"}
-  config_encrypted TEXT,               -- platform credentials (FB/LinkedIn page tokens), AES-256-GCM encrypted
-  webhook_secret_encrypted TEXT,       -- for FB/LinkedIn webhook verification
-  total_leads_count INTEGER DEFAULT 0,
-  last_received_at TEXT,
-  created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (default_course_id) REFERENCES courses(id) ON DELETE SET NULL,
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-);
-
--- Every single submission attempt, successful or not — for debugging a customer's
--- form integration and for spotting spam/bot floods.
-CREATE TABLE IF NOT EXISTS lead_capture_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_id INTEGER,
-  raw_payload TEXT,
-  status TEXT DEFAULT 'success',       -- success | duplicate | rejected_spam | rejected_rate_limit | error
-  lead_id INTEGER,
-  error TEXT,
-  ip_address TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (source_id) REFERENCES lead_sources(id) ON DELETE CASCADE,
-  FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_lead_capture_log_source ON lead_capture_log(source_id);
-CREATE INDEX IF NOT EXISTS idx_lead_capture_log_ip ON lead_capture_log(ip_address, created_at);
-`);
-
-// ============================================================================
-// Facebook/Instagram OAuth connections — the "Connect Facebook Account" flow.
-// One connection per user who authorizes; each connection can have many Pages,
-// each Page can have many Lead Forms, each Form becomes its own lead_source.
-// ============================================================================
-db.exec(`
-CREATE TABLE IF NOT EXISTS facebook_connections (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  connected_by INTEGER NOT NULL,
-  fb_user_id TEXT,
-  fb_user_name TEXT,
-  user_access_token_encrypted TEXT NOT NULL,
-  token_expires_at TEXT,
-  connected_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (connected_by) REFERENCES users(id) ON DELETE CASCADE
-);
-`);
-
-function ensureColumn2(table, column, ddl) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-}
-ensureColumn2('lead_sources', 'connection_id', 'connection_id INTEGER REFERENCES facebook_connections(id) ON DELETE SET NULL');
-ensureColumn2('lead_sources', 'fb_page_id', 'fb_page_id TEXT');
-ensureColumn2('lead_sources', 'fb_page_name', 'fb_page_name TEXT');
-ensureColumn2('lead_sources', 'fb_form_id', 'fb_form_id TEXT');
-ensureColumn2('lead_sources', 'fb_form_name', 'fb_form_name TEXT');
 
 module.exports = db;

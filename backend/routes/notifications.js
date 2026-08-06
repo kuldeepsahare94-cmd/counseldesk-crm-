@@ -8,67 +8,99 @@ function isRead(key) {
 
 function buildNotifications() {
   const items = [];
-  const today = new Date().toISOString().slice(0, 10);
 
-  // New Lead Assigned (today)
-  const newLeads = db.prepare(`SELECT id, student_name, assigned_counselor, created_at FROM leads WHERE date(created_at) = date(?) AND assigned_counselor IS NOT NULL`).all(today);
-  for (const l of newLeads) {
-    const key = `lead-new-${l.id}`;
-    items.push({ key, type: 'new_lead_assigned', title: 'New Lead Assigned', message: `${l.student_name} → ${l.assigned_counselor}`, link: `/leads/${l.id}`, date: l.created_at, read: isRead(key) });
-  }
-
-  // Upcoming Follow-up
-  const followups = db.prepare(`SELECT id, student_name, follow_up_date FROM leads WHERE follow_up_date IS NOT NULL AND date(follow_up_date) <= date(?) AND status NOT IN ('Converted','Dropped')`).all(today);
-  for (const l of followups) {
-    const key = `followup-${l.id}`;
-    items.push({ key, type: 'upcoming_followup', title: 'Upcoming Follow-up', message: l.student_name, link: `/leads/${l.id}`, date: l.follow_up_date, read: isRead(key) });
-  }
-
-  // Admission Created (today)
-  const admissions = db.prepare(`SELECT a.id, a.created_at, s.student_name FROM admissions a JOIN students s ON s.id = a.student_id WHERE date(a.created_at) = date(?)`).all(today);
-  for (const a of admissions) {
-    const key = `admission-${a.id}`;
-    items.push({ key, type: 'admission_created', title: 'Admission Created', message: a.student_name, link: `/admissions/${a.id}`, date: a.created_at, read: isRead(key) });
-  }
-
-  // Payment Due / Payment Received
-  const payments = db.prepare(`SELECT p.id, p.status, p.amount, p.created_at, s.student_name FROM payments p JOIN students s ON s.id = p.student_id WHERE p.status IN ('Pending','Partial','Paid') ORDER BY p.created_at DESC LIMIT 50`).all();
-  for (const p of payments) {
-    const due = p.status === 'Pending' || p.status === 'Partial';
-    const key = `payment-${p.id}-${p.status}`;
+  // 1. Follow-ups due today or overdue
+  const followups = db.prepare(`
+    SELECT f.id, f.scheduled_at, f.remark, inq.id AS inquiry_id, inq.name AS inquiry_name
+    FROM followups f JOIN inquiries inq ON inq.id = f.inquiry_id
+    WHERE f.status = 'Planned' AND f.scheduled_at IS NOT NULL
+      AND date(f.scheduled_at) <= date('now')
+    ORDER BY f.scheduled_at
+  `).all();
+  for (const f of followups) {
+    const overdue = new Date(f.scheduled_at) < new Date() && f.scheduled_at.slice(0, 10) !== new Date().toISOString().slice(0, 10);
+    const key = `followup-${f.id}`;
     items.push({
-      key, type: due ? 'payment_due' : 'payment_received',
-      title: due ? 'Payment Due' : 'Payment Received',
-      message: `${p.student_name} · ₹${Number(p.amount).toLocaleString('en-IN')}`,
-      link: `/payments/${p.id}`, date: p.created_at, read: isRead(key),
+      key, type: overdue ? 'followup_overdue' : 'followup_due_today',
+      title: overdue ? 'Follow-up overdue' : 'Follow-up due today',
+      message: `${f.inquiry_name}${f.remark ? ' — ' + f.remark : ''}`,
+      link: `/inquiries/${f.inquiry_id}`,
+      date: f.scheduled_at,
+      read: isRead(key),
     });
   }
 
-  // Interview Scheduled / Reminder / Result Updated
-  const placements = db.prepare(`SELECT pl.id, pl.interview_status, pl.interview_date, pl.result, pl.created_at, s.student_name, co.company_name FROM placements pl JOIN students s ON s.id = pl.student_id JOIN companies co ON co.id = pl.company_id`).all();
-  for (const p of placements) {
-    if (p.interview_status === 'Scheduled') {
-      const key = `interview-scheduled-${p.id}`;
-      items.push({ key, type: 'interview_scheduled', title: 'Interview Scheduled', message: `${p.student_name} · ${p.company_name}`, link: `/placements/${p.id}`, date: p.created_at, read: isRead(key) });
-      if (p.interview_date && p.interview_date.slice(0, 10) === today) {
-        const rKey = `interview-reminder-${p.id}`;
-        items.push({ key: rKey, type: 'interview_reminder', title: 'Interview Reminder — Today', message: `${p.student_name} · ${p.company_name}`, link: `/placements/${p.id}`, date: p.interview_date, read: isRead(rKey) });
-      }
-    }
-    if (p.result) {
-      const key = `placement-result-${p.id}`;
-      items.push({ key, type: 'placement_result_updated', title: 'Placement Result Updated', message: `${p.student_name} · ${p.company_name} · ${p.result}`, link: `/placements/${p.id}`, date: p.created_at, read: isRead(key) });
-    }
+  // 2. Applications submitted
+  const submitted = db.prepare(`
+    SELECT a.id, a.submitted_at, s.name AS student_name, i.name AS institution_name, s.id AS student_id
+    FROM applications a JOIN students s ON s.id = a.student_id JOIN institutions i ON i.id = a.institution_id
+    WHERE a.status = 'Submitted'
+    ORDER BY a.submitted_at DESC
+  `).all();
+  for (const a of submitted) {
+    const key = `app-submitted-${a.id}`;
+    items.push({
+      key, type: 'application_submitted', title: 'Application submitted',
+      message: `${a.student_name} → ${a.institution_name}`,
+      link: `/students/${a.student_id}`,
+      date: a.submitted_at,
+      read: isRead(key),
+    });
   }
 
-  // WhatsApp: unread inbound messages
-  const unreadConvos = db.prepare(`SELECT id, phone_number, entity_name, last_message_preview, last_message_at FROM whatsapp_conversations WHERE unread_count > 0`).all();
-  for (const c of unreadConvos) {
-    const key = `whatsapp-unread-${c.id}-${c.last_message_at}`;
+  // 3. Offers received
+  const offers = db.prepare(`
+    SELECT a.id, a.decision_at, s.name AS student_name, i.name AS institution_name, s.id AS student_id
+    FROM applications a JOIN students s ON s.id = a.student_id JOIN institutions i ON i.id = a.institution_id
+    WHERE a.status = 'Offer Received'
+    ORDER BY a.decision_at DESC
+  `).all();
+  for (const a of offers) {
+    const key = `app-offer-${a.id}`;
     items.push({
-      key, type: 'whatsapp_message', title: 'New WhatsApp Message',
-      message: `${c.entity_name || c.phone_number}: ${c.last_message_preview || ''}`,
-      link: `/whatsapp/inbox/${c.id}`, date: c.last_message_at, read: isRead(key),
+      key, type: 'offer_received', title: 'Offer received',
+      message: `${a.student_name} → ${a.institution_name}`,
+      link: `/students/${a.student_id}`,
+      date: a.decision_at,
+      read: isRead(key),
+    });
+  }
+
+  // 4. Payments overdue (active enrollment with a balance still outstanding)
+  const enrollments = db.prepare(`
+    SELECT e.id, e.fee_total, e.enrolled_at, s.name AS student_name, s.id AS student_id, i.name AS institution_name,
+      (SELECT COALESCE(SUM(amount),0) FROM payments p WHERE p.enrollment_id = e.id) AS paid
+    FROM enrollments e JOIN students s ON s.id = e.student_id JOIN institutions i ON i.id = e.institution_id
+    WHERE e.status = 'Active' AND e.payment_status != 'Received'
+  `).all();
+  for (const e of enrollments) {
+    const balance = (e.fee_total || 0) - e.paid;
+    if (balance <= 0) continue;
+    const key = `payment-${e.id}`;
+    items.push({
+      key, type: 'payment_overdue', title: 'Payment overdue',
+      message: `${e.student_name} · ${e.institution_name} · ₹${balance.toLocaleString('en-IN')} outstanding`,
+      link: `/students/${e.student_id}`,
+      date: e.enrolled_at,
+      read: isRead(key),
+    });
+  }
+
+  // 5. Documents pending
+  const docs = db.prepare(`
+    SELECT d.id, d.document_type, d.created_at, s.name AS student_name, s.id AS student_id
+    FROM documents d JOIN students s ON s.id = d.student_id
+    WHERE d.status = 'Pending'
+    ORDER BY d.created_at DESC
+  `).all();
+  for (const d of docs) {
+    const key = `doc-${d.id}`;
+    items.push({
+      key, type: 'document_pending', title: 'Document pending',
+      message: `${d.student_name} — ${d.document_type}`,
+      link: `/students/${d.student_id}`,
+      date: d.created_at,
+      read: isRead(key),
     });
   }
 
@@ -78,7 +110,8 @@ function buildNotifications() {
 
 router.get('/', (req, res) => {
   const items = buildNotifications();
-  res.json({ items, unread: items.filter((i) => !i.read).length });
+  const unread = items.filter((i) => !i.read).length;
+  res.json({ items, unread });
 });
 
 router.post('/:key/read', (req, res) => {

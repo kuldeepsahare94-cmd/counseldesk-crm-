@@ -1,124 +1,108 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requirePermission } = require('../middleware/auth');
 
-// All reports support the same query params: from, to (date range on created_at/relevant date),
-// plus report-specific filters. Frontend handles Export to Excel/PDF/Print client-side (CSV + window.print),
-// same pattern as the base project's utils/csv.js.
-
-const dateFilter = (col, from, to) => {
-  const clauses = [];
-  const params = [];
-  if (from) { clauses.push(`date(${col}) >= date(?)`); params.push(from); }
-  if (to) { clauses.push(`date(${col}) <= date(?)`); params.push(to); }
-  return { clause: clauses.length ? ' AND ' + clauses.join(' AND ') : '', params };
-};
-
-router.get('/leads', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to, status } = req.query;
-  const { clause, params } = dateFilter('l.created_at', from, to);
-  let sql = `SELECT l.*, c.course_name AS interested_course_name FROM leads l LEFT JOIN courses c ON c.id = l.interested_course_id WHERE 1=1${clause}`;
-  if (status) { sql += ' AND l.status = ?'; params.push(status); }
-  res.json(db.prepare(sql).all(...params));
+// Overall dashboard summary
+router.get('/summary', (req, res) => {
+  const totalInquiries = db.prepare('SELECT COUNT(*) c FROM inquiries').get().c;
+  const totalStudents = db.prepare('SELECT COUNT(*) c FROM students').get().c;
+  const totalEnrollments = db.prepare(`SELECT COUNT(*) c FROM enrollments WHERE status='Active'`).get().c;
+  const revenue = db.prepare(`
+    SELECT COALESCE(SUM(commission_amount),0) total,
+           COALESCE(SUM(CASE WHEN payment_status='Received' THEN commission_amount ELSE 0 END),0) received,
+           COALESCE(SUM(CASE WHEN payment_status!='Received' THEN commission_amount ELSE 0 END),0) pending
+    FROM enrollments WHERE status='Active'
+  `).get();
+  res.json({
+    total_inquiries: totalInquiries,
+    total_students: totalStudents,
+    total_enrollments: totalEnrollments,
+    revenue_total: revenue.total,
+    revenue_received: revenue.received,
+    revenue_pending: revenue.pending
+  });
 });
 
-router.get('/students', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to, status } = req.query;
-  const { clause, params } = dateFilter('s.created_at', from, to);
-  let sql = `SELECT * FROM students s WHERE 1=1${clause}`;
-  if (status) { sql += ' AND s.status = ?'; params.push(status); }
-  res.json(db.prepare(sql).all(...params));
+// Counseling count per institution
+router.get('/institution-counseling', (req, res) => {
+  const rows = db.prepare(`
+    SELECT inst.id, inst.name, inst.type,
+      COUNT(ii.id) AS counseling_count,
+      SUM(CASE WHEN ii.status='Offer' THEN 1 ELSE 0 END) AS offers,
+      SUM(CASE WHEN ii.status='Rejected' THEN 1 ELSE 0 END) AS rejections
+    FROM institutions inst
+    LEFT JOIN inquiry_institutions ii ON ii.institution_id = inst.id
+    GROUP BY inst.id ORDER BY counseling_count DESC
+  `).all();
+  res.json(rows);
 });
 
-router.get('/admissions', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to, status, course_id } = req.query;
-  const { clause, params } = dateFilter('a.created_at', from, to);
-  let sql = `SELECT a.*, s.student_name, c.course_name FROM admissions a
-    JOIN students s ON s.id = a.student_id JOIN courses c ON c.id = a.course_id WHERE 1=1${clause}`;
-  if (status) { sql += ' AND a.admission_status = ?'; params.push(status); }
-  if (course_id) { sql += ' AND a.course_id = ?'; params.push(course_id); }
-  res.json(db.prepare(sql).all(...params));
+// Revenue per institution
+router.get('/revenue-by-institution', (req, res) => {
+  const rows = db.prepare(`
+    SELECT inst.id, inst.name,
+      COUNT(en.id) AS enrollment_count,
+      COALESCE(SUM(en.fee_total),0) AS total_fees,
+      COALESCE(SUM(en.commission_amount),0) AS total_commission,
+      COALESCE(SUM(CASE WHEN en.payment_status='Received' THEN en.commission_amount ELSE 0 END),0) AS received,
+      COALESCE(SUM(CASE WHEN en.payment_status!='Received' THEN en.commission_amount ELSE 0 END),0) AS pending
+    FROM institutions inst
+    LEFT JOIN enrollments en ON en.institution_id = inst.id AND en.status='Active'
+    GROUP BY inst.id ORDER BY total_commission DESC
+  `).all();
+  res.json(rows);
 });
 
-router.get('/course-wise-admissions', requirePermission('reports', 'view'), (req, res) => {
-  res.json(db.prepare(`
-    SELECT c.course_name, COUNT(a.id) total_admissions,
-      SUM(CASE WHEN a.admission_status = 'Active' THEN 1 ELSE 0 END) active,
-      SUM(CASE WHEN a.admission_status = 'Completed' THEN 1 ELSE 0 END) completed
-    FROM courses c LEFT JOIN admissions a ON a.course_id = c.id
-    GROUP BY c.id ORDER BY total_admissions DESC
-  `).all());
+// Conversion funnel
+router.get('/funnel', (req, res) => {
+  const stages = db.prepare(`
+    SELECT status, COUNT(*) c FROM inquiries GROUP BY status
+  `).all();
+  const students = db.prepare('SELECT COUNT(*) c FROM students').get().c;
+  const enrolled = db.prepare(`SELECT COUNT(*) c FROM enrollments WHERE status='Active'`).get().c;
+  res.json({ inquiry_stages: stages, total_students: students, total_enrolled: enrolled });
 });
 
-router.get('/fee-collection', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to } = req.query;
-  const { clause, params } = dateFilter('p.payment_date', from, to);
-  const sql = `SELECT p.*, s.student_name, c.course_name FROM payments p
-    JOIN students s ON s.id = p.student_id JOIN courses c ON c.id = p.course_id
-    WHERE p.status = 'Paid'${clause} ORDER BY p.payment_date DESC`;
-  res.json(db.prepare(sql).all(...params));
+// Monthly inquiry trend (last 6 months)
+router.get('/trend', (req, res) => {
+  const rows = db.prepare(`
+    SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS inquiries
+    FROM inquiries
+    GROUP BY month
+    ORDER BY month DESC
+    LIMIT 6
+  `).all();
+  res.json(rows.reverse());
 });
 
-router.get('/pending-fees', requirePermission('reports', 'view'), (req, res) => {
-  res.json(db.prepare(`
-    SELECT p.*, s.student_name, s.mobile, c.course_name FROM payments p
-    JOIN students s ON s.id = p.student_id JOIN courses c ON c.id = p.course_id
-    WHERE p.status IN ('Pending','Partial') ORDER BY p.created_at
-  `).all());
+// Follow-up tracking summary for the dashboard
+router.get('/followups-summary', (req, res) => {
+  const plannedToday = db.prepare(`
+    SELECT COUNT(*) c FROM followups WHERE status='Planned' AND date(scheduled_at) = date('now')
+  `).get().c;
+  const doneToday = db.prepare(`
+    SELECT COUNT(*) c FROM followups WHERE status='Done' AND date(COALESCE(completed_at, sent_at)) = date('now')
+  `).get().c;
+  const overdue = db.prepare(`
+    SELECT COUNT(*) c FROM followups WHERE status='Planned' AND datetime(scheduled_at) < datetime('now')
+  `).get().c;
+  const totalPlanned = db.prepare(`SELECT COUNT(*) c FROM followups WHERE status='Planned'`).get().c;
+  res.json({ planned_today: plannedToday, done_today: doneToday, overdue, total_planned: totalPlanned });
 });
 
-router.get('/payments', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to, status } = req.query;
-  const { clause, params } = dateFilter('p.created_at', from, to);
-  let sql = `SELECT p.*, s.student_name, c.course_name FROM payments p
-    JOIN students s ON s.id = p.student_id JOIN courses c ON c.id = p.course_id WHERE 1=1${clause}`;
-  if (status) { sql += ' AND p.status = ?'; params.push(status); }
-  res.json(db.prepare(sql).all(...params));
-});
-
-router.get('/placements', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to, result } = req.query;
-  const { clause, params } = dateFilter('pl.created_at', from, to);
-  let sql = `SELECT pl.*, s.student_name, co.company_name FROM placements pl
-    JOIN students s ON s.id = pl.student_id JOIN companies co ON co.id = pl.company_id WHERE 1=1${clause}`;
-  if (result) { sql += ' AND pl.result = ?'; params.push(result); }
-  res.json(db.prepare(sql).all(...params));
-});
-
-router.get('/interviews', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to, status } = req.query;
-  const { clause, params } = dateFilter('pl.interview_date', from, to);
-  let sql = `SELECT pl.*, s.student_name, co.company_name FROM placements pl
-    JOIN students s ON s.id = pl.student_id JOIN companies co ON co.id = pl.company_id WHERE 1=1${clause}`;
-  if (status) { sql += ' AND pl.interview_status = ?'; params.push(status); }
-  res.json(db.prepare(sql).all(...params));
-});
-
-router.get('/companies', requirePermission('reports', 'view'), (req, res) => {
-  res.json(db.prepare(`
-    SELECT co.*, COUNT(pl.id) total_interviews, SUM(CASE WHEN pl.result = 'Selected' THEN 1 ELSE 0 END) selected
-    FROM companies co LEFT JOIN placements pl ON pl.company_id = co.id
-    GROUP BY co.id ORDER BY co.company_name
-  `).all());
-});
-
-router.get('/revenue', requirePermission('reports', 'view'), (req, res) => {
-  const { from, to } = req.query;
-  const { clause, params } = dateFilter('p.payment_date', from, to);
-  res.json(db.prepare(`
-    SELECT c.course_name, COALESCE(SUM(p.amount),0) revenue, COUNT(p.id) payment_count
-    FROM courses c LEFT JOIN payments p ON p.course_id = c.id AND p.status = 'Paid'${clause}
-    GROUP BY c.id ORDER BY revenue DESC
-  `).all(...params));
-});
-
-router.get('/monthly-admissions', requirePermission('reports', 'view'), (req, res) => {
-  res.json(db.prepare(`SELECT strftime('%Y-%m', created_at) month, COUNT(*) total FROM admissions GROUP BY month ORDER BY month DESC`).all());
-});
-
-router.get('/monthly-collection', requirePermission('reports', 'view'), (req, res) => {
-  res.json(db.prepare(`SELECT strftime('%Y-%m', payment_date) month, COALESCE(SUM(amount),0) total FROM payments WHERE status='Paid' AND payment_date IS NOT NULL GROUP BY month ORDER BY month DESC`).all());
+// Task tracking summary for the dashboard
+router.get('/tasks-summary', (req, res) => {
+  const dueToday = db.prepare(`
+    SELECT COUNT(*) c FROM tasks WHERE status != 'Done' AND date(due_date) = date('now')
+  `).get().c;
+  const overdue = db.prepare(`
+    SELECT COUNT(*) c FROM tasks WHERE status != 'Done' AND due_date IS NOT NULL AND datetime(due_date) < datetime('now')
+  `).get().c;
+  const doneToday = db.prepare(`
+    SELECT COUNT(*) c FROM tasks WHERE status='Done' AND date(completed_at) = date('now')
+  `).get().c;
+  const pendingDocs = db.prepare(`SELECT COUNT(*) c FROM documents WHERE status='Pending'`).get().c;
+  res.json({ due_today: dueToday, overdue, done_today: doneToday, pending_documents: pendingDocs });
 });
 
 module.exports = router;

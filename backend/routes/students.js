@@ -1,72 +1,54 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requirePermission } = require('../middleware/auth');
 
-router.get('/', requirePermission('students', 'view'), (req, res) => {
-  const { status, q } = req.query;
-  let sql = `SELECT s.*,
-      (SELECT COUNT(*) FROM admissions a WHERE a.student_id = s.id) AS admission_count
-    FROM students s WHERE 1=1`;
-  const params = [];
-  if (status) { sql += ' AND s.status = ?'; params.push(status); }
-  if (q) { sql += ' AND (s.student_name LIKE ? OR s.mobile LIKE ? OR s.email LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
-  sql += ' ORDER BY s.created_at DESC';
-  res.json(db.prepare(sql).all(...params));
+router.get('/', (req, res) => {
+  const rows = db.prepare(`
+    SELECT s.*,
+      (SELECT COUNT(*) FROM enrollments e WHERE e.student_id = s.id) AS enrollment_count
+    FROM students s ORDER BY s.converted_at DESC
+  `).all();
+  res.json(rows);
 });
 
-router.get('/:id', requirePermission('students', 'view'), (req, res) => {
-  const student = db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id);
+router.get('/:id', (req, res) => {
+  const student = db.prepare(`
+    SELECT s.*, c.name AS country_name FROM students s
+    LEFT JOIN countries c ON c.id = s.country_id
+    WHERE s.id = ?
+  `).get(req.params.id);
   if (!student) return res.status(404).json({ error: 'Not found' });
-  const admissions = db.prepare(`
-    SELECT a.*, c.course_name FROM admissions a JOIN courses c ON c.id = a.course_id
-    WHERE a.student_id=? ORDER BY a.admission_date DESC
+  const enrollments = db.prepare(`
+    SELECT en.*, inst.name AS institution_name
+    FROM enrollments en JOIN institutions inst ON inst.id = en.institution_id
+    WHERE en.student_id = ? ORDER BY en.enrolled_at DESC
   `).all(req.params.id);
-  const payments = db.prepare(`
-    SELECT p.* FROM payments p WHERE p.student_id=? ORDER BY p.created_at DESC
-  `).all(req.params.id);
-  const placements = db.prepare(`
-    SELECT pl.*, co.company_name FROM placements pl JOIN companies co ON co.id = pl.company_id
-    WHERE pl.student_id=? ORDER BY pl.created_at DESC
-  `).all(req.params.id);
-  const lead = student.lead_id ? db.prepare('SELECT * FROM leads WHERE id=?').get(student.lead_id) : null;
-  res.json({ ...student, admissions, payments, placements, lead_history: lead });
+  // full counseling history via the original inquiry
+  const history = student.inquiry_id ? db.prepare(`
+    SELECT ii.status AS counseling_status, ii.created_at, inst.name AS institution_name
+    FROM inquiry_institutions ii JOIN institutions inst ON inst.id = ii.institution_id
+    WHERE ii.inquiry_id = ? ORDER BY ii.created_at DESC
+  `).all(student.inquiry_id) : [];
+  res.json({ ...student, enrollments, counseling_history: history });
 });
 
-router.post('/', requirePermission('students', 'create'), (req, res) => {
-  const b = req.body;
-  if (!b.student_name) return res.status(400).json({ error: 'student_name is required' });
-  const info = db.prepare(`
-    INSERT INTO students (photo, student_name, mobile, alternate_mobile, email, gender, date_of_birth, address,
-      qualification, aadhaar_number, parent_name, parent_mobile, emergency_contact, status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    b.photo || null, b.student_name, b.mobile || null, b.alternate_mobile || null, b.email || null, b.gender || null,
-    b.date_of_birth || null, b.address || null, b.qualification || null, b.aadhaar_number || null,
-    b.parent_name || null, b.parent_mobile || null, b.emergency_contact || null, b.status || 'Active'
-  );
-  res.status(201).json(db.prepare('SELECT * FROM students WHERE id=?').get(info.lastInsertRowid));
-});
-
-router.put('/:id', requirePermission('students', 'edit'), (req, res) => {
-  const existing = db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id);
+router.put('/:id', (req, res) => {
+  const existing = db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const m = { ...existing, ...req.body };
   db.prepare(`
-    UPDATE students SET photo=?, student_name=?, mobile=?, alternate_mobile=?, email=?, gender=?, date_of_birth=?,
-      address=?, qualification=?, aadhaar_number=?, parent_name=?, parent_mobile=?, emergency_contact=?, status=?
+    UPDATE students SET
+      name=?, phone=?, email=?, date_of_birth=?, gender=?, address=?, city=?, country_id=?,
+      passport_number=?, highest_qualification=?, academic_percentage=?, english_test=?, english_test_score=?,
+      alternate_phone=?, guardian_name=?, guardian_phone=?
     WHERE id=?
   `).run(
-    m.photo, m.student_name, m.mobile, m.alternate_mobile, m.email, m.gender, m.date_of_birth,
-    m.address, m.qualification, m.aadhaar_number, m.parent_name, m.parent_mobile, m.emergency_contact, m.status,
+    m.name, m.phone, m.email, m.date_of_birth || null, m.gender || null, m.address || null, m.city || null, m.country_id || null,
+    m.passport_number || null, m.highest_qualification || null, m.academic_percentage || null, m.english_test || null, m.english_test_score || null,
+    m.alternate_phone || null, m.guardian_name || null, m.guardian_phone || null,
     req.params.id
   );
-  res.json(db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id));
-});
-
-router.delete('/:id', requirePermission('students', 'delete'), (req, res) => {
-  db.prepare('DELETE FROM students WHERE id=?').run(req.params.id);
-  res.status(204).end();
+  res.json(db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id));
 });
 
 module.exports = router;
