@@ -3,7 +3,16 @@ const PDFDocument = require('pdfkit');
 // Renders a payment receipt as a PDF stream, using whichever institute
 // template ('A' or 'B') is passed in. Templates are configurable from the
 // admin panel (receipt_templates table) — see routes/receiptTemplates.js.
-function generateReceiptPdf({ payment, student, admission, course, template }, res) {
+//
+// `payer` is a generic { name, subLabel, referenceLabel, referenceValue }
+// shape built by the caller (routes/payments.js) — it works the same way
+// whether the payment is a legacy student-fee payment (name: student name,
+// subLabel: mobile, referenceLabel: "Admission No", referenceValue: the
+// admission number) or a generic one linked to an Account/Opportunity
+// (name: account name, subLabel: contact name, referenceLabel:
+// "Opportunity"/"Quotation", referenceValue: its name/number). This is what
+// makes the receipt industry-generic instead of assuming a student/course.
+function generateReceiptPdf({ payment, payer, lineDescription, template }, res) {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=Receipt-${payment.payment_number}-Institute${template.id}.pdf`);
@@ -27,13 +36,12 @@ function generateReceiptPdf({ payment, student, admission, course, template }, r
   doc.text(`Date: ${(payment.payment_date || payment.created_at || '').slice(0, 10)}`, 320, metaY);
   doc.moveDown(1.5);
 
-  // Student / admission details
+  // Payer details — generic, works for any linked record type
   doc.fontSize(11).fillColor('#111827').text('Received From', { underline: true });
   doc.fontSize(10).fillColor('#374151');
-  doc.text(`Student Name: ${student.student_name}`);
-  doc.text(`Mobile: ${student.mobile || '-'}`);
-  doc.text(`Admission No: ${admission.admission_number}`);
-  doc.text(`Course: ${course.course_name}`);
+  doc.text(`Name: ${payer.name || '-'}`);
+  if (payer.subLabel) doc.text(payer.subLabel);
+  if (payer.referenceLabel && payer.referenceValue) doc.text(`${payer.referenceLabel}: ${payer.referenceValue}`);
   doc.moveDown();
 
   // Payment table
@@ -46,7 +54,7 @@ function generateReceiptPdf({ payment, student, admission, course, template }, r
 
   const rowY = tableTop + 24;
   doc.fontSize(10).fillColor('#374151');
-  doc.text(`${course.course_name} — Fee Payment`, 50, rowY, { width: 250 });
+  doc.text(lineDescription || payment.description || 'Payment', 50, rowY, { width: 250 });
   doc.text(`#${payment.installment_number}`, 300, rowY, { width: 90 });
   doc.text(Number(payment.amount || 0).toLocaleString('en-IN'), 400, rowY, { width: 140, align: 'right' });
   doc.moveTo(50, rowY + 20).lineTo(545, rowY + 20).strokeColor('#d1d5db').stroke();

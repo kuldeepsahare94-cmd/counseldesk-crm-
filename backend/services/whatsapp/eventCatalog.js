@@ -14,6 +14,12 @@ const STUDENT_FIELDS = ['student_name', 'mobile', 'email'];
 const ADMISSION_FIELDS = ['student_name', 'course_name', 'admission_number', 'admission_date', 'total_course_fees', 'course_tenure'];
 const PAYMENT_FIELDS = ['student_name', 'amount', 'payment_number', 'installment_number', 'course_name'];
 const PLACEMENT_FIELDS = ['student_name', 'company_name', 'interview_date', 'interview_round'];
+const OPPORTUNITY_FIELDS = ['opportunity_name', 'account_name', 'contact_name', 'amount', 'stage', 'expected_close_date'];
+const OPPORTUNITY_STAGE_FIELDS = ['opportunity_name', 'account_name', 'from_stage', 'to_stage', 'amount'];
+const QUOTATION_FIELDS = ['quote_number', 'account_name', 'contact_name', 'grand_total', 'valid_until'];
+const TICKET_FIELDS = ['ticket_number', 'subject', 'priority', 'account_name'];
+const TICKET_RESOLVED_FIELDS = ['ticket_number', 'subject', 'resolution'];
+const SUBSCRIPTION_FIELDS = ['subscription_number', 'account_name', 'plan', 'renewal_date', 'recurring_amount'];
 
 const EVENTS = {
   lead_created: { label: 'Lead Created', entity: 'lead', entityFields: LEAD_FIELDS, trigger: 'realtime', supported: true },
@@ -41,6 +47,20 @@ const EVENTS = {
     note: 'No anniversary date is stored anywhere in this CRM (no membership/enrollment-anniversary field exists), so this can\'t fire honestly. Add a date field first if you need this.',
   },
   welcome_message: { label: 'Welcome Message', entity: 'student', entityFields: STUDENT_FIELDS, trigger: 'realtime', supported: true, note: 'Fires when a Lead is converted into a Student.' },
+
+  // ---- Universal CRM modules (Accounts, Opportunities, Quotations, Subscriptions, Tickets) ----
+  opportunity_created: { label: 'Opportunity Created', entity: 'opportunity', entityFields: OPPORTUNITY_FIELDS, trigger: 'realtime', supported: true },
+  opportunity_stage_changed: { label: 'Opportunity Stage Changed', entity: 'opportunity', entityFields: OPPORTUNITY_STAGE_FIELDS, trigger: 'realtime', supported: true },
+  opportunity_won: { label: 'Opportunity Won', entity: 'opportunity', entityFields: OPPORTUNITY_FIELDS, trigger: 'realtime', supported: true },
+  opportunity_lost: { label: 'Opportunity Lost', entity: 'opportunity', entityFields: OPPORTUNITY_FIELDS, trigger: 'realtime', supported: true },
+  quotation_sent: { label: 'Quotation Sent', entity: 'quotation', entityFields: QUOTATION_FIELDS, trigger: 'realtime', supported: true },
+  ticket_created: { label: 'Ticket Created', entity: 'ticket', entityFields: TICKET_FIELDS, trigger: 'realtime', supported: true },
+  ticket_resolved: { label: 'Ticket Resolved', entity: 'ticket', entityFields: TICKET_RESOLVED_FIELDS, trigger: 'realtime', supported: true },
+  subscription_renewal_due: {
+    label: 'Subscription Renewal Due', entity: 'subscription', entityFields: SUBSCRIPTION_FIELDS, trigger: 'scheduled', supported: true,
+    note: 'Fires once, a configurable number of days before renewal_date, when /whatsapp/workflows/run-scheduled-checks runs.',
+  },
+
   custom: {
     label: 'Custom Workflow Event', entity: null, entityFields: [], trigger: 'manual', supported: true,
     note: 'Fired manually or by future custom integrations — not tied to a built-in CRM action.',

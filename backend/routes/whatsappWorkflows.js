@@ -96,7 +96,7 @@ router.get('/workflows/:id/runs', requirePermission('whatsapp', 'view'), (req, r
 // same-day workshop/interview reminders. Nothing fires on its own without that.
 router.post('/workflows/run-scheduled-checks', requirePermission('whatsapp', 'edit'), async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
-  const results = { follow_up_missed: 0, payment_overdue: 0, birthday: 0, workshop_reminder: 0 };
+  const results = { follow_up_missed: 0, payment_overdue: 0, birthday: 0, workshop_reminder: 0, subscription_renewal_due: 0 };
 
   const workflowsFor = (eventType) => db.prepare('SELECT * FROM whatsapp_workflows WHERE event_type=? AND active=1').all(eventType);
   const alreadyRan = (workflowId, entityType, entityId, eventType) =>
@@ -161,6 +161,27 @@ router.post('/workflows/run-scheduled-checks', requirePermission('whatsapp', 'ed
         fields: { student_name: placement.student_name, company_name: placement.company_name, interview_date: placement.interview_date, interview_round: placement.interview_round },
       });
       results.workshop_reminder++;
+    }
+  }
+
+  // Subscription Renewal Due: Active subscriptions whose renewal_date is within
+  // the workflow's configured window (reusing overdue_days as "days before
+  // renewal" here, same config field the other scheduled checks already use).
+  for (const wf of workflowsFor('subscription_renewal_due')) {
+    const subs = db.prepare(`
+      SELECT s.*, a.account_name, a.whatsapp AS account_whatsapp, a.phone AS account_phone,
+        c.whatsapp AS contact_whatsapp, c.mobile AS contact_mobile
+      FROM subscriptions s LEFT JOIN accounts a ON a.id = s.account_id LEFT JOIN contacts c ON c.id = s.contact_id
+      WHERE s.status='Active' AND s.renewal_date IS NOT NULL AND date(s.renewal_date) <= date(?, '+' || ? || ' days') AND date(s.renewal_date) >= date(?)
+    `).all(today, wf.overdue_days || 7, today);
+    for (const sub of subs) {
+      const mobile = sub.contact_whatsapp || sub.contact_mobile || sub.account_whatsapp || sub.account_phone;
+      if (alreadyRan(wf.id, 'subscription', sub.id, 'subscription_renewal_due') || !mobile) continue;
+      await require('../services/whatsapp/workflowEngine').fireEvent('subscription_renewal_due', {
+        entityType: 'subscription', entityId: sub.id, mobile,
+        fields: { subscription_number: sub.subscription_number, account_name: sub.account_name || '', plan: sub.plan || '', renewal_date: sub.renewal_date, recurring_amount: sub.recurring_amount },
+      });
+      results.subscription_renewal_due++;
     }
   }
 

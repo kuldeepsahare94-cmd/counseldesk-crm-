@@ -1,12 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const Anthropic = require('@anthropic-ai/sdk');
 const db = require('../db');
 const { requirePermission } = require('../middleware/auth');
 const { tools, PermissionError } = require('../services/aiTools');
-
-const MODEL = process.env.ASSISTANT_MODEL || 'claude-sonnet-5';
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+const { anthropic, MODEL } = require('../services/aiClient');
 
 const SYSTEM_PROMPT = `You are the AI assistant embedded in EduPlace CRM, an admission & placement CRM.
 You help staff query data and take actions using ONLY the tools provided — you have no other way
@@ -92,7 +89,7 @@ async function runLoop(user, conversationId, history) {
 
     // Read-only tool — execute immediately and keep looping.
     try {
-      const result = tool.handler(user, toolUse.input || {});
+      const result = await tool.handler(user, toolUse.input || {});
       logAction(user, conversationId, tool.name, tool.module, false, toolUse.input, JSON.stringify(result).slice(0, 300), 'success');
       history.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: JSON.stringify(result ?? null) }] });
     } catch (err) {
@@ -170,7 +167,7 @@ router.post('/conversations/:id/confirm', requirePermission('assistant', 'view')
   }
 
   try {
-    const result = tool.handler(req.user, convo.pending.input || {});
+    const result = await tool.handler(req.user, convo.pending.input || {});
     logAction(req.user, convo.id, tool.name, tool.module, true, convo.pending.input, JSON.stringify(result).slice(0, 300), 'success');
     history.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: convo.pending.tool_use_id, content: JSON.stringify(result ?? null) }] });
   } catch (err) {

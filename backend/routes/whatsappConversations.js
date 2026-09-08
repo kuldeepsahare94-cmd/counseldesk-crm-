@@ -11,10 +11,11 @@ function logAudit(user, providerId, action, detail, status) {
 }
 
 router.get('/conversations', requirePermission('whatsapp', 'view'), (req, res) => {
-  const { entity_type, unread_only, q } = req.query;
+  const { entity_type, entity_id, unread_only, q } = req.query;
   let sql = `SELECT c.*, p.name AS provider_name FROM whatsapp_conversations c JOIN whatsapp_providers p ON p.id = c.provider_id WHERE 1=1`;
   const params = [];
   if (entity_type) { sql += ' AND c.entity_type=?'; params.push(entity_type); }
+  if (entity_id) { sql += ' AND c.entity_id=?'; params.push(entity_id); }
   if (unread_only === 'true') { sql += ' AND c.unread_count > 0'; }
   if (q) { sql += ' AND (c.entity_name LIKE ? OR c.phone_number LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
   sql += ' ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC';

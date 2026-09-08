@@ -2,7 +2,10 @@ const db = require('../../db');
 const { normalizePhone } = require('./phone');
 
 // Students take priority over leads (an already-converted customer messaging
-// in should link to their student record, not a stale lead).
+// in should link to their student record, not a stale lead). Contacts take
+// priority over Accounts for the same reason — a named person is more
+// specific than the company-level number. Order overall: student > contact >
+// lead > account.
 function matchEntity(phoneNumber) {
   const target = normalizePhone(phoneNumber);
   if (!target) return null;
@@ -11,9 +14,17 @@ function matchEntity(phoneNumber) {
     .find((s) => normalizePhone(s.mobile) === target);
   if (student) return { entityType: 'student', entityId: student.id, entityName: student.student_name, assignedTo: null };
 
+  const contact = db.prepare("SELECT id, first_name, last_name, mobile, whatsapp FROM contacts WHERE mobile IS NOT NULL OR whatsapp IS NOT NULL").all()
+    .find((c) => normalizePhone(c.whatsapp) === target || normalizePhone(c.mobile) === target);
+  if (contact) return { entityType: 'contact', entityId: contact.id, entityName: `${contact.first_name} ${contact.last_name || ''}`.trim(), assignedTo: null };
+
   const lead = db.prepare('SELECT id, student_name, mobile, assigned_counselor FROM leads WHERE mobile IS NOT NULL').all()
     .find((l) => normalizePhone(l.mobile) === target);
   if (lead) return { entityType: 'lead', entityId: lead.id, entityName: lead.student_name, assignedTo: lead.assigned_counselor };
+
+  const account = db.prepare("SELECT id, account_name, phone, whatsapp FROM accounts WHERE phone IS NOT NULL OR whatsapp IS NOT NULL").all()
+    .find((a) => normalizePhone(a.whatsapp) === target || normalizePhone(a.phone) === target);
+  if (account) return { entityType: 'account', entityId: account.id, entityName: account.account_name, assignedTo: null };
 
   return null;
 }

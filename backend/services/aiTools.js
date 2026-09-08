@@ -7,6 +7,9 @@
 // route requires an explicit user confirmation before calling their handler.
 // ============================================================================
 const db = require('../db');
+const { getAdapter } = require('./whatsapp/registry');
+const { decryptJSON } = require('./whatsapp/crypto');
+const { sendEmail, isConfigured: emailConfigured } = require('./email');
 
 const inr = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN')}`;
 const admissionNumber = (id) => `ADM-${String(id).padStart(5, '0')}`;
@@ -393,8 +396,59 @@ register({
   },
 });
 
+// ===== WhatsApp: real send, now that the WhatsApp system exists =====
+register({
+  name: 'list_whatsapp_templates',
+  module: 'whatsapp', isWrite: false,
+  description: 'List approved WhatsApp templates available to send, with which provider each belongs to. Call this before send_whatsapp_message if you don\'t already know a template name.',
+  input_schema: { type: 'object', properties: {} },
+  handler: (user) => {
+    requirePerm(user, 'whatsapp', 'view');
+    return db.prepare(`
+      SELECT t.id, t.template_name, t.language, t.category, t.body_text, t.variables_json, t.provider_id, p.name AS provider_name
+      FROM whatsapp_templates t JOIN whatsapp_providers p ON p.id = t.provider_id WHERE t.status='APPROVED'
+    `).all().map((t) => ({ ...t, variables: JSON.parse(t.variables_json || '[]') }));
+  },
+});
+
+register({
+  name: 'send_whatsapp_message',
+  module: 'whatsapp', isWrite: true,
+  description: 'Send a WhatsApp template message to a phone number. Use list_whatsapp_templates first to find a valid template_id and see which variables it needs.',
+  input_schema: {
+    type: 'object', required: ['mobile', 'template_id'],
+    properties: { mobile: { type: 'string' }, template_id: { type: 'integer' }, variables: { type: 'object', description: 'e.g. {"1": "Priya", "2": "Full Stack Dev"}' } },
+  },
+  handler: async (user, i) => {
+    requirePerm(user, 'whatsapp', 'create');
+    const template = db.prepare('SELECT * FROM whatsapp_templates WHERE id=?').get(i.template_id);
+    if (!template) throw new Error('Template not found');
+    const provider = db.prepare('SELECT * FROM whatsapp_providers WHERE id=?').get(template.provider_id);
+    const adapter = getAdapter(provider.provider_type);
+    const credentials = decryptJSON(provider.credentials_encrypted);
+    const result = await adapter.sendMessage(credentials, { to: i.mobile, template_name: template.template_name, language: template.language, variables: i.variables || {} });
+    return { sent: true, providerMessageId: result.providerMessageId };
+  },
+});
+
+// ===== Email: real send via SMTP =====
+register({
+  name: 'send_email',
+  module: 'settings', isWrite: true,
+  description: 'Send an email. Only works if SMTP is configured on the backend — check the result for an "available: false" response if not.',
+  input_schema: {
+    type: 'object', required: ['to', 'subject', 'body'],
+    properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+  },
+  handler: async (user, i) => {
+    if (!emailConfigured()) return { available: false, message: 'Email isn\'t connected to this CRM yet — SMTP isn\'t configured in the backend environment.' };
+    const result = await sendEmail({ to: i.to, subject: i.subject, text: i.body });
+    return { sent: true, messageId: result.messageId };
+  },
+});
+
 // ===== Not-yet-integrated actions: report honestly instead of faking success =====
-for (const [name, label] of [['send_whatsapp_message', 'WhatsApp'], ['send_email', 'Email'], ['generate_invoice', 'Invoice generation']]) {
+for (const [name, label] of [['generate_invoice', 'Invoice generation']]) {
   register({
     name, module: 'settings', isWrite: false,
     description: `Attempt to ${label}. No provider is configured yet, so this reports that honestly instead of pretending to send something.`,
@@ -402,5 +456,279 @@ for (const [name, label] of [['send_whatsapp_message', 'WhatsApp'], ['send_email
     handler: () => ({ available: false, message: `${label} isn't connected to this CRM yet — no provider is configured in Settings.` }),
   });
 }
+
+const inr2 = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN')}`;
+
+function defaultOpportunityStage(stageName) {
+  const stage = db.prepare(`
+    SELECT s.* FROM module_pipeline_stages s
+    JOIN module_pipelines p ON p.id = s.pipeline_id
+    JOIN modules m ON m.id = p.module_id
+    WHERE m.api_name='opportunities' AND p.is_default=1 AND LOWER(s.name)=LOWER(?)
+  `).get(stageName);
+  return stage;
+}
+
+// ===== Accounts =====
+register({
+  name: 'search_accounts',
+  module: 'accounts', isWrite: false,
+  description: 'Search/list Accounts (companies, customers, prospects). Use for "find the account for X", "list active accounts", etc.',
+  input_schema: { type: 'object', properties: { q: { type: 'string' }, status: { type: 'string' }, limit: { type: 'integer', default: 25 } } },
+  handler: (user, i) => {
+    requirePerm(user, 'accounts', 'view');
+    let sql = 'SELECT id, account_name, industry, account_type, status, city, phone, email FROM accounts WHERE 1=1';
+    const p = [];
+    if (i.q) { sql += ' AND account_name LIKE ?'; p.push(`%${i.q}%`); }
+    if (i.status) { sql += ' AND status=?'; p.push(i.status); }
+    sql += ' ORDER BY account_name LIMIT ?'; p.push(Math.min(i.limit || 25, 100));
+    return db.prepare(sql).all(...p);
+  },
+});
+
+register({
+  name: 'get_account_360',
+  module: 'accounts', isWrite: false,
+  description: 'Full picture of one Account: its contacts, open opportunities, quotations, subscriptions, and open tickets. Use for "give me the full picture on account X" or "what is the status with X".',
+  input_schema: { type: 'object', required: ['account_id'], properties: { account_id: { type: 'integer' } } },
+  handler: (user, i) => {
+    requirePerm(user, 'accounts', 'view');
+    const account = db.prepare('SELECT * FROM accounts WHERE id=?').get(i.account_id);
+    if (!account) throw new Error('Account not found');
+    return {
+      account,
+      contacts: db.prepare('SELECT id, first_name, last_name, job_title, mobile FROM contacts WHERE account_id=?').all(i.account_id),
+      open_opportunities: db.prepare(`
+        SELECT o.id, o.opportunity_name, o.amount, s.name AS stage FROM opportunities o
+        LEFT JOIN module_pipeline_stages s ON s.id=o.stage_id WHERE o.account_id=? AND (s.is_won IS NOT 1 AND s.is_lost IS NOT 1)
+      `).all(i.account_id),
+      quotations: db.prepare('SELECT id, quote_number, status, grand_total FROM quotations WHERE account_id=?').all(i.account_id),
+      subscriptions: db.prepare('SELECT id, subscription_number, plan, status, recurring_amount FROM subscriptions WHERE account_id=?').all(i.account_id),
+      open_tickets: db.prepare(`SELECT id, ticket_number, subject, priority, status FROM tickets WHERE account_id=? AND status NOT IN ('Resolved','Closed')`).all(i.account_id),
+    };
+  },
+});
+
+// ===== Contacts =====
+register({
+  name: 'search_contacts',
+  module: 'contacts', isWrite: false,
+  description: 'Search/list Contacts (people), optionally scoped to one account.',
+  input_schema: { type: 'object', properties: { q: { type: 'string' }, account_id: { type: 'integer' }, limit: { type: 'integer', default: 25 } } },
+  handler: (user, i) => {
+    requirePerm(user, 'contacts', 'view');
+    let sql = `SELECT c.id, c.first_name, c.last_name, c.job_title, c.mobile, c.email, a.account_name
+      FROM contacts c LEFT JOIN accounts a ON a.id=c.account_id WHERE 1=1`;
+    const p = [];
+    if (i.q) { sql += ' AND (c.first_name LIKE ? OR c.last_name LIKE ?)'; p.push(`%${i.q}%`, `%${i.q}%`); }
+    if (i.account_id) { sql += ' AND c.account_id=?'; p.push(i.account_id); }
+    sql += ' ORDER BY c.first_name LIMIT ?'; p.push(Math.min(i.limit || 25, 100));
+    return db.prepare(sql).all(...p);
+  },
+});
+
+// ===== Opportunities =====
+register({
+  name: 'search_opportunities',
+  module: 'opportunities', isWrite: false,
+  description: 'Search/list Opportunities (deals), optionally filtered by stage name or account. Use for "what deals are in negotiation", "show open deals for account X".',
+  input_schema: { type: 'object', properties: { stage_name: { type: 'string' }, account_id: { type: 'integer' }, limit: { type: 'integer', default: 25 } } },
+  handler: (user, i) => {
+    requirePerm(user, 'opportunities', 'view');
+    let sql = `SELECT o.id, o.opportunity_name, o.amount, o.probability, o.expected_close_date, a.account_name, s.name AS stage
+      FROM opportunities o LEFT JOIN accounts a ON a.id=o.account_id LEFT JOIN module_pipeline_stages s ON s.id=o.stage_id WHERE 1=1`;
+    const p = [];
+    if (i.stage_name) { sql += ' AND LOWER(s.name)=LOWER(?)'; p.push(i.stage_name); }
+    if (i.account_id) { sql += ' AND o.account_id=?'; p.push(i.account_id); }
+    sql += ' ORDER BY o.created_at DESC LIMIT ?'; p.push(Math.min(i.limit || 25, 100));
+    return db.prepare(sql).all(...p);
+  },
+});
+
+register({
+  name: 'pipeline_summary',
+  module: 'opportunities', isWrite: false,
+  description: 'Opportunity pipeline value by stage — total and weighted (probability-adjusted). Use for "what our pipeline looks like", "total pipeline value".',
+  input_schema: { type: 'object', properties: {} },
+  handler: (user) => {
+    requirePerm(user, 'opportunities', 'view');
+    return db.prepare(`
+      SELECT s.name AS stage, COUNT(o.id) AS deal_count, COALESCE(SUM(o.amount),0) AS total,
+        COALESCE(SUM(o.amount * COALESCE(o.probability, s.probability, 0) / 100.0),0) AS weighted
+      FROM module_pipeline_stages s
+      JOIN module_pipelines p ON p.id = s.pipeline_id AND p.is_default = 1
+      JOIN modules m ON m.id = p.module_id AND m.api_name='opportunities'
+      LEFT JOIN opportunities o ON o.stage_id = s.id
+      GROUP BY s.id ORDER BY s.sort_order
+    `).all().map((r) => ({ ...r, total: inr2(r.total), weighted: inr2(r.weighted) }));
+  },
+});
+
+register({
+  name: 'create_opportunity',
+  module: 'opportunities', isWrite: true,
+  description: 'Create a new Opportunity (deal). It is placed in the first stage of the default pipeline automatically unless you name a stage.',
+  input_schema: {
+    type: 'object', required: ['opportunity_name', 'account_id'],
+    properties: { opportunity_name: { type: 'string' }, account_id: { type: 'integer' }, primary_contact_id: { type: 'integer' }, amount: { type: 'number' }, stage_name: { type: 'string' } },
+  },
+  handler: (user, i) => {
+    requirePerm(user, 'opportunities', 'create');
+    const account = db.prepare('SELECT id FROM accounts WHERE id=?').get(i.account_id);
+    if (!account) throw new Error('Account not found');
+    const pipeline = db.prepare(`
+      SELECT p.* FROM module_pipelines p JOIN modules m ON m.id=p.module_id WHERE m.api_name='opportunities' AND p.is_default=1
+    `).get();
+    const stage = i.stage_name ? defaultOpportunityStage(i.stage_name)
+      : (pipeline && db.prepare('SELECT * FROM module_pipeline_stages WHERE pipeline_id=? ORDER BY sort_order LIMIT 1').get(pipeline.id));
+    const info = db.prepare(`
+      INSERT INTO opportunities (opportunity_name, account_id, primary_contact_id, pipeline_id, stage_id, amount, currency, probability)
+      VALUES (?,?,?,?,?,?, 'INR', ?)
+    `).run(i.opportunity_name, i.account_id, i.primary_contact_id || null, pipeline?.id || null, stage?.id || null, i.amount || 0, stage?.probability ?? null);
+    if (stage) db.prepare('INSERT INTO opportunity_stage_history (opportunity_id, from_stage_id, to_stage_id, changed_by) VALUES (?,?,?,?)').run(info.lastInsertRowid, null, stage.id, user.id);
+    return { id: info.lastInsertRowid, opportunity_name: i.opportunity_name, stage: stage?.name || null };
+  },
+});
+
+register({
+  name: 'move_opportunity_stage',
+  module: 'opportunities', isWrite: true,
+  description: 'Move an Opportunity to a named stage in the default pipeline (e.g. "Proposal", "Won", "Lost").',
+  input_schema: { type: 'object', required: ['opportunity_id', 'stage_name'], properties: { opportunity_id: { type: 'integer' }, stage_name: { type: 'string' } } },
+  handler: (user, i) => {
+    requirePerm(user, 'opportunities', 'edit');
+    const opp = db.prepare('SELECT * FROM opportunities WHERE id=?').get(i.opportunity_id);
+    if (!opp) throw new Error('Opportunity not found');
+    const stage = defaultOpportunityStage(i.stage_name);
+    if (!stage) throw new Error(`No stage named "${i.stage_name}" in the default pipeline`);
+    db.prepare(`UPDATE opportunities SET stage_id=?, probability=?, updated_at=datetime('now') WHERE id=?`).run(stage.id, stage.probability ?? opp.probability, i.opportunity_id);
+    db.prepare('INSERT INTO opportunity_stage_history (opportunity_id, from_stage_id, to_stage_id, changed_by) VALUES (?,?,?,?)').run(i.opportunity_id, opp.stage_id, stage.id, user.id);
+    return { id: i.opportunity_id, moved_to: stage.name };
+  },
+});
+
+// ===== Quotations =====
+register({
+  name: 'search_quotations',
+  module: 'quotations', isWrite: false,
+  description: 'Search/list Quotations, optionally by status or account.',
+  input_schema: { type: 'object', properties: { status: { type: 'string' }, account_id: { type: 'integer' }, limit: { type: 'integer', default: 25 } } },
+  handler: (user, i) => {
+    requirePerm(user, 'quotations', 'view');
+    let sql = `SELECT q.id, q.quote_number, q.status, q.grand_total, q.quote_date, a.account_name
+      FROM quotations q LEFT JOIN accounts a ON a.id=q.account_id WHERE 1=1`;
+    const p = [];
+    if (i.status) { sql += ' AND q.status=?'; p.push(i.status); }
+    if (i.account_id) { sql += ' AND q.account_id=?'; p.push(i.account_id); }
+    sql += ' ORDER BY q.quote_date DESC LIMIT ?'; p.push(Math.min(i.limit || 25, 100));
+    return db.prepare(sql).all(...p).map((r) => ({ ...r, grand_total: inr2(r.grand_total) }));
+  },
+});
+
+// ===== Products =====
+register({
+  name: 'search_products',
+  module: 'products', isWrite: false,
+  description: 'Search/list Products & Services in the catalog.',
+  input_schema: { type: 'object', properties: { q: { type: 'string' }, active_only: { type: 'boolean', default: true } } },
+  handler: (user, i) => {
+    requirePerm(user, 'products', 'view');
+    let sql = 'SELECT id, product_name, sku, product_type, selling_price, billing_frequency, active FROM products WHERE 1=1';
+    const p = [];
+    if (i.active_only !== false) sql += ' AND active=1';
+    if (i.q) { sql += ' AND product_name LIKE ?'; p.push(`%${i.q}%`); }
+    sql += ' ORDER BY product_name';
+    return db.prepare(sql).all(...p).map((r) => ({ ...r, selling_price: inr2(r.selling_price) }));
+  },
+});
+
+// ===== Subscriptions =====
+register({
+  name: 'subscriptions_mrr_summary',
+  module: 'subscriptions', isWrite: false,
+  description: 'Current MRR/ARR and active subscription count. Use for "what our MRR is", "recurring revenue".',
+  input_schema: { type: 'object', properties: {} },
+  handler: (user) => {
+    requirePerm(user, 'subscriptions', 'view');
+    const active = db.prepare(`SELECT recurring_amount, billing_cycle FROM subscriptions WHERE status='Active'`).all();
+    const monthly = (s) => s.billing_cycle === 'Yearly' ? s.recurring_amount / 12 : s.billing_cycle === 'Quarterly' ? s.recurring_amount / 3 : s.recurring_amount;
+    const mrr = active.reduce((sum, s) => sum + monthly(s), 0);
+    return { mrr: inr2(mrr), arr: inr2(mrr * 12), active_subscriptions: active.length };
+  },
+});
+
+register({
+  name: 'search_subscriptions',
+  module: 'subscriptions', isWrite: false,
+  description: 'Search/list Subscriptions, optionally by status or account. Use for "which subscriptions are renewing soon", "show past-due subscriptions".',
+  input_schema: { type: 'object', properties: { status: { type: 'string' }, account_id: { type: 'integer' }, limit: { type: 'integer', default: 25 } } },
+  handler: (user, i) => {
+    requirePerm(user, 'subscriptions', 'view');
+    let sql = `SELECT s.id, s.subscription_number, s.plan, s.status, s.recurring_amount, s.billing_cycle, s.renewal_date, a.account_name
+      FROM subscriptions s LEFT JOIN accounts a ON a.id=s.account_id WHERE 1=1`;
+    const p = [];
+    if (i.status) { sql += ' AND s.status=?'; p.push(i.status); }
+    if (i.account_id) { sql += ' AND s.account_id=?'; p.push(i.account_id); }
+    sql += ' ORDER BY s.renewal_date LIMIT ?'; p.push(Math.min(i.limit || 25, 100));
+    return db.prepare(sql).all(...p).map((r) => ({ ...r, recurring_amount: inr2(r.recurring_amount) }));
+  },
+});
+
+// ===== Tickets =====
+register({
+  name: 'search_tickets',
+  module: 'tickets', isWrite: false,
+  description: 'Search/list support Tickets, optionally by status or priority. Use for "show open high-priority tickets".',
+  input_schema: { type: 'object', properties: { status: { type: 'string' }, priority: { type: 'string' }, limit: { type: 'integer', default: 25 } } },
+  handler: (user, i) => {
+    requirePerm(user, 'tickets', 'view');
+    let sql = `SELECT t.id, t.ticket_number, t.subject, t.priority, t.status, a.account_name
+      FROM tickets t LEFT JOIN accounts a ON a.id=t.account_id WHERE 1=1`;
+    const p = [];
+    if (i.status) { sql += ' AND t.status=?'; p.push(i.status); }
+    if (i.priority) { sql += ' AND t.priority=?'; p.push(i.priority); }
+    sql += ' ORDER BY t.created_at DESC LIMIT ?'; p.push(Math.min(i.limit || 25, 100));
+    return db.prepare(sql).all(...p);
+  },
+});
+
+register({
+  name: 'create_ticket',
+  module: 'tickets', isWrite: true,
+  description: 'Create a new support Ticket.',
+  input_schema: {
+    type: 'object', required: ['subject'],
+    properties: { subject: { type: 'string' }, account_id: { type: 'integer' }, contact_id: { type: 'integer' }, priority: { type: 'string', description: 'Low, Medium, High, or Urgent' }, description: { type: 'string' } },
+  },
+  handler: (user, i) => {
+    requirePerm(user, 'tickets', 'create');
+    const count = db.prepare('SELECT COUNT(*) c FROM tickets').get().c;
+    const ticketNumber = `TKT-${String(count + 1).padStart(5, '0')}`;
+    const info = db.prepare(`
+      INSERT INTO tickets (ticket_number, subject, account_id, contact_id, priority, description, source)
+      VALUES (?,?,?,?,?,?, 'AI Assistant')
+    `).run(ticketNumber, i.subject, i.account_id || null, i.contact_id || null, i.priority || 'Medium', i.description || null);
+    return { id: info.lastInsertRowid, ticket_number: ticketNumber };
+  },
+});
+
+register({
+  name: 'reply_to_ticket',
+  module: 'tickets', isWrite: true,
+  description: 'Add a reply to an existing Ticket — either a customer-visible reply or an internal note.',
+  input_schema: {
+    type: 'object', required: ['ticket_id', 'body'],
+    properties: { ticket_id: { type: 'integer' }, body: { type: 'string' }, is_internal: { type: 'boolean', default: false } },
+  },
+  handler: (user, i) => {
+    requirePerm(user, 'tickets', 'edit');
+    const ticket = db.prepare('SELECT * FROM tickets WHERE id=?').get(i.ticket_id);
+    if (!ticket) throw new Error('Ticket not found');
+    const info = db.prepare('INSERT INTO ticket_replies (ticket_id, is_internal, body, created_by) VALUES (?,?,?,?)')
+      .run(i.ticket_id, i.is_internal ? 1 : 0, i.body, user.id);
+    if (!i.is_internal && !ticket.first_response_at) db.prepare(`UPDATE tickets SET first_response_at=datetime('now') WHERE id=?`).run(i.ticket_id);
+    return { id: info.lastInsertRowid, ticket_number: ticket.ticket_number };
+  },
+});
 
 module.exports = { tools, PermissionError, requirePerm, can };
