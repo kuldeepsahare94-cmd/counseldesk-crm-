@@ -2,11 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import { api } from '../api';
+import { ModuleIcon } from './moduleIcons';
+
+// Legacy modules still have their own dedicated pages (from before the
+// universal list/detail pages existed) rather than /records/:module — this
+// maps those few over; anything not listed here uses the universal route.
+const LEGACY_ROUTES = {
+  leads: (id) => `/leads/${id}`,
+  students: (id) => `/students/${id}`,
+  companies_legacy: (id) => `/companies/${id}`,
+  courses: () => `/courses`,
+  admissions: (id) => `/admissions/${id}`,
+};
 
 export default function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState({ inquiries: [], students: [], institutions: [] });
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef(null);
   const navigate = useNavigate();
@@ -18,30 +30,28 @@ export default function GlobalSearch() {
   }, []);
 
   useEffect(() => {
-    if (!query.trim()) { setResults({ inquiries: [], students: [], institutions: [] }); return; }
+    if (!query.trim() || query.trim().length < 2) { setGroups([]); return; }
     setLoading(true);
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     const timer = setTimeout(async () => {
-      const [inquiries, students, institutions] = await Promise.all([
-        api.listInquiries({}), api.listStudents(), api.listInstitutions(),
-      ]);
-      setResults({
-        inquiries: inquiries.filter((i) => i.name?.toLowerCase().includes(q) || i.phone?.includes(q)).slice(0, 5),
-        students: students.filter((s) => s.name?.toLowerCase().includes(q) || s.phone?.includes(q)).slice(0, 5),
-        institutions: institutions.filter((i) => i.name?.toLowerCase().includes(q)).slice(0, 5),
-      });
-      setLoading(false);
+      try {
+        const { groups: g } = await api.globalSearch(q);
+        setGroups(g);
+      } finally {
+        setLoading(false);
+      }
     }, 250);
     return () => clearTimeout(timer);
   }, [query]);
 
-  const goTo = (path) => {
-    navigate(path);
+  const goTo = (moduleApiName, id) => {
+    const legacy = LEGACY_ROUTES[moduleApiName];
+    navigate(legacy ? legacy(id) : `/records/${moduleApiName}/${id}`);
     setOpen(false);
     setQuery('');
   };
 
-  const hasResults = results.inquiries.length || results.students.length || results.institutions.length;
+  const hasResults = groups.some((g) => g.results.length > 0);
 
   return (
     <div ref={ref} className="relative w-full max-w-md">
@@ -51,7 +61,7 @@ export default function GlobalSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setOpen(true)}
-          placeholder="Search inquiries, students, institutions…"
+          placeholder="Search leads, accounts, contacts, deals, tickets…"
           className="bg-transparent border-0 outline-none text-sm px-2 flex-1 min-w-0"
         />
         {query && (
@@ -66,41 +76,20 @@ export default function GlobalSearch() {
           {loading && <p className="text-xs text-slate-400 px-4 py-3">Searching…</p>}
           {!loading && !hasResults && <p className="text-xs text-slate-400 px-4 py-3">No matches.</p>}
 
-          {results.inquiries.length > 0 && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-4 pt-3 pb-1">Inquiries</div>
-              {results.inquiries.map((i) => (
-                <button key={i.id} onClick={() => goTo(`/inquiries/${i.id}`)}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-canvas flex justify-between">
-                  <span className="text-ink font-medium">{i.name}</span>
-                  <span className="text-slate-400 text-xs">{i.phone}</span>
+          {!loading && groups.map((g) => (
+            <div key={g.module.api_name}>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-4 pt-3 pb-1 flex items-center gap-1.5">
+                <ModuleIcon name={g.module.icon} className="w-3 h-3" /> {g.module.plural_label}
+              </div>
+              {g.results.map((r) => (
+                <button key={r.id} onClick={() => goTo(g.module.api_name, r.id)}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-canvas flex justify-between gap-2">
+                  <span className="text-ink font-medium truncate">{r.label}</span>
+                  {r.sub && <span className="text-slate-400 text-xs shrink-0">{r.sub}</span>}
                 </button>
               ))}
             </div>
-          )}
-          {results.students.length > 0 && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-4 pt-3 pb-1">Students</div>
-              {results.students.map((s) => (
-                <button key={s.id} onClick={() => goTo(`/students/${s.id}`)}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-canvas flex justify-between">
-                  <span className="text-ink font-medium">{s.name}</span>
-                  <span className="text-slate-400 text-xs">{s.phone}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {results.institutions.length > 0 && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-4 pt-3 pb-1">Institutions</div>
-              {results.institutions.map((i) => (
-                <button key={i.id} onClick={() => goTo(`/institutions/${i.id}`)}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-canvas">
-                  <span className="text-ink font-medium">{i.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Download, X } from 'lucide-react';
+import { Download, X, Wallet, Plus } from 'lucide-react';
+import Avatar from '../components/Avatar';
 import { api } from '../api';
 import { usePermissions } from '../context/usePermissions';
 import StatusBadge from '../components/StatusBadge';
@@ -45,6 +46,70 @@ function MarkPaidModal({ payment, onClose, onSaved }) {
   );
 }
 
+function NewPaymentModal({ onClose, onSaved }) {
+  const [accounts, setAccounts] = useState([]);
+  const [form, setForm] = useState({ account_id: '', payer_name: '', amount: '', description: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.universalList({ api_name: 'accounts', table_name: 'accounts' }).then(setAccounts).catch(() => {});
+  }, []);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.createPayment({
+        account_id: form.account_id || null,
+        payer_name: form.account_id ? null : form.payer_name,
+        amount: Number(form.amount) || 0,
+        description: form.description,
+      });
+      onSaved();
+    } catch (err) {
+      alert('Could not create payment: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form onSubmit={submit} className="bg-white rounded-xl p-5 w-full max-w-sm relative">
+        <button type="button" onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-ink"><X className="w-4 h-4" /></button>
+        <h2 className="text-sm font-semibold text-ink mb-4">New payment</h2>
+
+        <label className="text-xs font-medium text-slate-500 block mb-1">Account (optional)</label>
+        <select className="border border-line rounded-lg px-3 py-2 text-sm w-full mb-3" value={form.account_id}
+          onChange={(e) => setForm({ ...form, account_id: e.target.value })}>
+          <option value="">— No account, use payer name below —</option>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.account_name}</option>)}
+        </select>
+
+        {!form.account_id && (
+          <>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Payer name</label>
+            <input className="border border-line rounded-lg px-3 py-2 text-sm w-full mb-3"
+              value={form.payer_name} onChange={(e) => setForm({ ...form, payer_name: e.target.value })} />
+          </>
+        )}
+
+        <label className="text-xs font-medium text-slate-500 block mb-1">Amount</label>
+        <input type="number" required className="border border-line rounded-lg px-3 py-2 text-sm w-full mb-3"
+          value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+
+        <label className="text-xs font-medium text-slate-500 block mb-1">Description</label>
+        <input className="border border-line rounded-lg px-3 py-2 text-sm w-full mb-4"
+          value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. Implementation fee" />
+
+        <button type="submit" disabled={saving} className="w-full bg-amber text-white text-sm font-medium py-2 rounded-lg hover:opacity-90 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Create payment'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function Payments() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -52,11 +117,12 @@ export default function Payments() {
   const [list, setList] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
 
   const load = () => api.listPayments({ status: statusFilter }).then(setList);
   useEffect(() => { load(); }, [statusFilter]);
 
-  // Deep-linked from Dashboard/Admission/Student — open the mark-paid modal directly
+  // Deep-linked (e.g. from a Dashboard link) — open the mark-paid modal directly
   useEffect(() => {
     if (id) {
       api.getPayment(id).then((p) => setEditing(p)).catch(() => {});
@@ -65,17 +131,32 @@ export default function Payments() {
 
   const closeModal = () => { setEditing(null); if (id) navigate('/payments'); };
   const saved = () => { closeModal(); load(); };
+  const created = () => { setCreating(false); load(); };
+
+  const reference = (p) => p.opportunity_name || p.quote_number || p.course_name || '—';
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-ink" style={{ fontFamily: 'var(--font-display)' }}>Payments</h1>
-          <p className="text-sm text-slate-500 mt-1">Installments auto-created from Admissions. Mark paid to unlock receipts.</p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-soft text-amber flex items-center justify-center shrink-0">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="t-page-title">Payments</h1>
+            <p className="text-sm text-slate-500 mt-1">Linked to an Account, Opportunity, or Quotation. Mark paid to unlock receipts.</p>
+          </div>
         </div>
-        {can('payments', 'export') && (
-          <button onClick={() => downloadCSV('payments.csv', list)} className="border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white">Export CSV</button>
-        )}
+        <div className="flex gap-2">
+          {can('payments', 'export') && (
+            <button onClick={() => downloadCSV('payments.csv', list)} className="btn btn-secondary">Export CSV</button>
+          )}
+          {can('payments', 'create') && (
+            <button onClick={() => setCreating(true)} className="bg-amber text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 inline-flex items-center gap-1.5">
+              <Plus className="w-4 h-4" /> New payment
+            </button>
+          )}
+        </div>
       </div>
 
       <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm mt-5">
@@ -83,13 +164,13 @@ export default function Payments() {
         {STATUSES.map((s) => <option key={s}>{s}</option>)}
       </select>
 
-      <div className="bg-white border border-line rounded-xl mt-6 overflow-hidden overflow-x-auto">
+      <div className="card mt-6 overflow-hidden overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-slate-500 bg-canvas border-b border-line">
+            <tr className="text-left bg-[var(--color-canvas)] border-b border-line">
               <th className="py-3 px-4 font-medium">Payment #</th>
-              <th className="py-3 px-4 font-medium">Student</th>
-              <th className="py-3 px-4 font-medium">Course</th>
+              <th className="py-3 px-4 font-medium">Payer</th>
+              <th className="py-3 px-4 font-medium">Reference</th>
               <th className="py-3 px-4 font-medium">Installment</th>
               <th className="py-3 px-4 font-medium text-right">Amount</th>
               <th className="py-3 px-4 font-medium">Status</th>
@@ -98,10 +179,15 @@ export default function Payments() {
           </thead>
           <tbody>
             {list.map((p) => (
-              <tr key={p.id} className="border-b border-line/60 hover:bg-canvas/60">
+              <tr key={p.id} className="border-b border-line/60 hover:bg-[var(--color-canvas)] transition-colors">
                 <td className="py-3 px-4 text-ink font-medium">{p.payment_number}</td>
-                <td className="py-3 px-4 text-slate-600">{p.student_name}</td>
-                <td className="py-3 px-4 text-slate-500">{p.course_name}</td>
+                <td className="py-3 px-4 text-slate-600">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={p.payer_display_name} color="amber" />
+                    {p.payer_display_name || '—'}
+                  </div>
+                </td>
+                <td className="py-3 px-4 text-slate-500">{reference(p)}</td>
                 <td className="py-3 px-4 text-slate-500">#{p.installment_number}</td>
                 <td className="py-3 px-4 text-right text-slate-700">{inr(p.amount)}</td>
                 <td className="py-3 px-4"><StatusBadge status={p.status} /></td>
@@ -130,6 +216,7 @@ export default function Payments() {
       </div>
 
       {editing && <MarkPaidModal payment={editing} onClose={closeModal} onSaved={saved} />}
+      {creating && <NewPaymentModal onClose={() => setCreating(false)} onSaved={created} />}
     </div>
   );
 }

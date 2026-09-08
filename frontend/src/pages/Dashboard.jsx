@@ -1,202 +1,225 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Users, GraduationCap, Building2, Wallet, PhoneCall, CalendarCheck, AlertTriangle, CheckSquare, FileCheck } from 'lucide-react';
+import { Users, TrendingUp, CalendarClock, IndianRupee, Target, LifeBuoy, PhoneCall, Repeat, AlertTriangle, Sparkles } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
-function Card({ label, value, sub, icon: Icon, accent }) {
-  return (
-    <div className="bg-white border border-line rounded-xl p-5 hover:border-ink/20 hover:shadow-sm transition-all">
+const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+// Bold, colored KPI cards — a top accent bar + tinted icon chip + big number,
+// Zoho/Freshdesk-style rather than a flat white box with a tiny badge.
+function KpiCard({ label, value, sub, icon: Icon, color, to }) {
+  const body = (
+    <div className="relative bg-white border border-line rounded-xl p-5 hover:shadow-md hover:-translate-y-0.5 transition-all h-full overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: color.bar }} />
       <div className="flex items-start justify-between">
-        <div className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</div>
+        <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">{label}</div>
         {Icon && (
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${accent || 'bg-slate-100 text-slate-500'}`}>
-            <Icon className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: color.chipBg, color: color.chipText }}>
+            <Icon className="w-4.5 h-4.5" />
           </div>
         )}
       </div>
-      <div className="font-display text-3xl font-semibold text-ink mt-2" style={{ fontFamily: 'var(--font-display)' }}>
+      <div className="font-display text-3xl font-bold text-ink mt-2" style={{ fontFamily: 'var(--font-display)' }}>
         {value}
       </div>
-      {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
+      {sub && <div className="text-xs text-slate-400 mt-1.5">{sub}</div>}
+    </div>
+  );
+  return to ? <Link to={to}>{body}</Link> : body;
+}
+
+const COLORS = {
+  amber: { bar: '#F59E0B', chipBg: '#FEF3C7', chipText: '#B45309' },
+  indigo: { bar: '#6366F1', chipBg: '#E0E7FF', chipText: '#4338CA' },
+  teal: { bar: '#14B8A6', chipBg: '#CCFBF1', chipText: '#0F766E' },
+  emerald: { bar: '#10B981', chipBg: '#D1FAE5', chipText: '#047857' },
+  blue: { bar: '#3B82F6', chipBg: '#DBEAFE', chipText: '#1D4ED8' },
+  rose: { bar: '#F43F5E', chipBg: '#FFE4E6', chipText: '#BE123C' },
+};
+
+function SectionLabel({ children }) {
+  return <h2 className="text-xs font-bold uppercase tracking-wide text-slate-400 mt-8 mb-3">{children}</h2>;
+}
+
+const RELATED_LABEL = { leads: 'Lead', accounts: 'Account', contacts: 'Contact', opportunities: 'Opportunity', tickets: 'Ticket' };
+
+// The universal CRM dashboard (master prompt section 17) — a second tab
+// alongside the original placement/education dashboard below, so existing
+// functionality stays exactly where it was for anyone who re-enables those
+// modules, while the CRM view is what a universal-CRM user actually needs
+// day to day.
+function AskAiWidget() {
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const ask = async (e) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+    setLoading(true); setError(''); setAnswer('');
+    try {
+      const r = await api.aiAskDashboard(question.trim());
+      setAnswer(r.answer);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="card p-5">
+      <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-amber" /> Ask AI</h2>
+      <p className="text-xs text-slate-400 mb-3">Grounded in the numbers above — e.g. "which stage has the most stuck deals?"</p>
+      <form onSubmit={ask} className="flex gap-2">
+        <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask a question about the pipeline…"
+          className="border border-line rounded-lg px-3 py-2 text-sm flex-1" />
+        <button type="submit" disabled={loading} className="btn btn-primary disabled:opacity-50">
+          {loading ? '…' : 'Ask'}
+        </button>
+      </form>
+      {error && <div className="text-xs text-warn bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">{error}</div>}
+      {answer && <p className="text-sm text-ink mt-3 bg-canvas rounded-lg p-3">{answer}</p>}
     </div>
   );
 }
 
-const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+function CrmDashboardSection({ data }) {
+  const c = data.cards;
+  return (
+    <>
+      <SectionLabel>Pipeline</SectionLabel>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="Total Leads" value={c.total_leads} icon={Users} color={COLORS.amber} to="/leads" />
+        <KpiCard label="Open Opportunities" value={c.open_opportunities} sub={inr(c.pipeline_value) + ' pipeline value'} icon={Target} color={COLORS.indigo} to="/records/opportunities" />
+        <KpiCard label="Weighted Pipeline" value={inr(c.weighted_pipeline)} sub="Probability-adjusted" icon={TrendingUp} color={COLORS.blue} to="/records/opportunities/kanban" />
+        <KpiCard label="Won This Month" value={inr(c.won_revenue_month)} sub={`${c.lost_this_month} lost this month`} icon={IndianRupee} color={COLORS.emerald} to="/records/opportunities" />
+      </div>
+
+      <SectionLabel>Revenue &amp; Support</SectionLabel>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="MRR" value={inr(c.mrr)} sub={`${inr(c.arr)} ARR`} icon={Repeat} color={COLORS.teal} to="/records/subscriptions" />
+        <KpiCard label="Open Tickets" value={c.open_tickets} icon={LifeBuoy} color={COLORS.rose} to="/records/tickets" />
+        <KpiCard label="Overdue Tasks" value={c.overdue_tasks} icon={AlertTriangle} color={COLORS.rose} to="/records/tasks" />
+        <KpiCard label="Follow-ups Due Today" value={c.followups_due_today} sub={`${c.followups_overdue} overdue`} icon={CalendarClock} color={COLORS.amber} />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        <KpiCard label="Today's Calls" value={c.todays_calls} icon={PhoneCall} color={COLORS.blue} to="/records/calls" />
+        <KpiCard label="Today's Meetings" value={c.todays_meetings} icon={CalendarClock} color={COLORS.indigo} to="/records/meetings" />
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6 mt-8">
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-ink mb-1">Opportunities by Stage</h2>
+          <p className="text-xs text-slate-400 mb-4">Deal count and value per pipeline stage</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={data.opportunities_by_stage}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-line)" />
+              <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v, name) => (name === 'total' ? inr(v) : v)} />
+              <Bar dataKey="c" name="Deals" fill="#6366F1" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-ink mb-1">Recurring Revenue</h2>
+          <p className="text-xs text-slate-400 mb-4">Subscription payments collected, last 6 months</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={data.revenue_by_month}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-line)" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v) => inr(v)} />
+              <Line type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={2.5} dot={{ fill: '#10B981', r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-ink mb-3 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Leads by Source</h2>
+          <div className="space-y-3">
+            {data.leads_by_source.map((s) => (
+              <div key={s.source} className="flex items-center justify-between text-sm">
+                <span className="text-slate-600 truncate">{s.source}</span>
+                <span className="font-semibold text-ink shrink-0">{s.c}</span>
+              </div>
+            ))}
+            {data.leads_by_source.length === 0 && <p className="text-sm text-slate-400">No leads yet.</p>}
+          </div>
+        </div>
+
+        <AskAiWidget />
+
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-ink mb-3">Recent Activity</h2>
+          <div className="space-y-1">
+            {data.recent_activities.map((a) => (
+              <Link key={`${a.type}-${a.id}`} to={`/records/${a.related_module}/${a.related_record_id}`}
+                className="flex items-center gap-3 hover:bg-canvas -mx-2 px-2 py-2 rounded-lg transition-colors">
+                <span className="text-[10px] font-bold uppercase w-14 shrink-0 text-slate-400">{a.type}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-ink font-medium truncate">{a.title}</div>
+                  <div className="text-xs text-slate-400">{RELATED_LABEL[a.related_module] || a.related_module}</div>
+                </div>
+              </Link>
+            ))}
+            {data.recent_activities.length === 0 && <p className="text-sm text-slate-400">Nothing logged yet.</p>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const { user } = useAuth();
-  const [summary, setSummary] = useState(null);
-  const [byInstitution, setByInstitution] = useState([]);
-  const [counseling, setCounseling] = useState([]);
-  const [trend, setTrend] = useState([]);
-  const [funnel, setFunnel] = useState(null);
-  const [followupsSummary, setFollowupsSummary] = useState(null);
-  const [tasksSummary, setTasksSummary] = useState(null);
+  const [crmData, setCrmData] = useState(null);
 
-  useEffect(() => {
-    api.summary().then(setSummary);
-    api.revenueByInstitution().then(setByInstitution);
-    api.institutionCounselingReport().then(setCounseling);
-    api.trend().then(setTrend);
-    api.funnel().then(setFunnel);
-    api.followupsSummary().then(setFollowupsSummary);
-    api.tasksSummary().then(setTasksSummary);
-  }, []);
+  useEffect(() => { api.dashboardCrm().then(setCrmData); }, []);
 
-  if (!summary) return <div className="p-8 text-slate-400">Loading…</div>;
-
-  const chartData = byInstitution
-    .filter((r) => r.total_commission > 0)
-    .slice(0, 8)
-    .map((r) => ({ id: r.id, name: r.name, commission: r.total_commission }));
+  if (!crmData) return <div className="p-8 text-slate-400">Loading…</div>;
+  const c = crmData.cards;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
-    <div className="p-8 max-w-6xl">
-      <div className="rounded-2xl p-6 mb-6 text-white relative overflow-hidden"
+    <div className="max-w-[1600px] mx-auto">
+      <div className="rounded-2xl p-6 mb-2 text-white relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, var(--color-ink), var(--color-ink-light))' }}>
         <div className="absolute inset-0 opacity-[0.06]" style={{
           backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
           backgroundSize: '24px 24px',
         }} />
-        <div className="relative">
-          <p className="text-white/50 text-xs">{today}</p>
-          <h1 className="font-display text-2xl font-semibold mt-1" style={{ fontFamily: 'var(--font-display)' }}>
-            {greeting}, {user?.full_name?.split(' ')[0] || user?.username || 'there'}
-          </h1>
-          <p className="text-white/60 text-sm mt-1">Here's where things stand today.</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Link to="/inquiries"><Card label="Total Inquiries" value={summary.total_inquiries} icon={Users} accent="bg-sky-50 text-sky-600" /></Link>
-        <Link to="/students"><Card label="Students Converted" value={summary.total_students} icon={GraduationCap} accent="bg-emerald-50 text-good" /></Link>
-        <Link to="/students"><Card label="Active Enrollments" value={summary.total_enrollments} icon={Building2} accent="bg-amber-soft text-amber" /></Link>
-        <Card label="Revenue Earned" value={inr(summary.revenue_total)} sub={`${inr(summary.revenue_pending)} pending`} icon={Wallet} accent="bg-ink/5 text-ink" />
-      </div>
-
-      {funnel && (
-        <div className="flex flex-wrap gap-2 mt-4">
-          {funnel.inquiry_stages.map((s) => (
-            <Link key={s.status} to={`/inquiries?status=${encodeURIComponent(s.status)}`}
-              className="text-xs font-medium px-3 py-1.5 rounded-full border border-line text-slate-600 hover:border-ink/40 hover:text-ink bg-white">
-              {s.status}: {s.c}
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {followupsSummary && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-ink mb-3">Follow-ups</h2>
-          <div className="grid grid-cols-3 gap-4">
-            <Link to="/followups?filter=today">
-              <Card label="Planned Today" value={followupsSummary.planned_today} icon={CalendarCheck} accent="bg-sky-50 text-sky-600" />
-            </Link>
-            <Link to="/followups?filter=done">
-              <Card label="Done Today" value={followupsSummary.done_today} icon={PhoneCall} accent="bg-emerald-50 text-good" />
-            </Link>
-            <Link to="/followups?filter=overdue">
-              <Card label="Overdue" value={followupsSummary.overdue} icon={AlertTriangle} accent="bg-red-50 text-warn" />
-            </Link>
+        <div className="relative flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <p className="text-white/50 text-xs">{today}</p>
+            <h1 className="font-display text-2xl font-semibold mt-1" style={{ fontFamily: 'var(--font-display)' }}>
+              {greeting}, {user?.full_name?.split(' ')[0] || user?.username || 'there'}
+            </h1>
+            <p className="text-white/60 text-sm mt-1">Here's where things stand today.</p>
+          </div>
+          <div className="flex gap-4">
+            <div className="text-right">
+              <div className="text-white/50 text-[10px] uppercase">Pipeline Value</div>
+              <div className="text-xl font-bold">{inr(c.pipeline_value)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-white/50 text-[10px] uppercase">Total Leads</div>
+              <div className="text-xl font-bold">{c.total_leads}</div>
+            </div>
           </div>
         </div>
-      )}
-
-      {tasksSummary && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-ink mb-3">Tasks &amp; Documents</h2>
-          <div className="grid grid-cols-4 gap-4">
-            <Link to="/tasks?filter=today">
-              <Card label="Tasks Due Today" value={tasksSummary.due_today} icon={CheckSquare} accent="bg-sky-50 text-sky-600" />
-            </Link>
-            <Link to="/tasks?filter=done">
-              <Card label="Tasks Done Today" value={tasksSummary.done_today} icon={CheckSquare} accent="bg-emerald-50 text-good" />
-            </Link>
-            <Link to="/tasks?filter=overdue">
-              <Card label="Tasks Overdue" value={tasksSummary.overdue} icon={AlertTriangle} accent="bg-red-50 text-warn" />
-            </Link>
-            <Link to="/students">
-              <Card label="Pending Documents" value={tasksSummary.pending_documents} icon={FileCheck} accent="bg-amber-soft text-amber" />
-            </Link>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white border border-line rounded-xl p-5 mt-6">
-        <h2 className="text-sm font-semibold text-ink mb-1">Inquiry trend (last 6 months)</h2>
-        <p className="text-xs text-slate-400 mb-3">Click a point to see that month's inquiries.</p>
-        {trend.length === 0 ? (
-          <p className="text-sm text-slate-400">Not enough data yet.</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={trend} onClick={(e) => e && e.activeLabel && navigate(`/inquiries?month=${e.activeLabel}`)}
-              style={{ cursor: 'pointer' }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D8" />
-              <XAxis dataKey="month" fontSize={12} />
-              <YAxis fontSize={12} allowDecimals={false} />
-              <Tooltip />
-              <Line type="monotone" dataKey="inquiries" stroke="#14213D" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
-        <div className="bg-white border border-line rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-ink mb-1">Commission by institution</h2>
-          <p className="text-xs text-slate-400 mb-3">Click a bar to open that institution.</p>
-          {chartData.length === 0 ? (
-            <p className="text-sm text-slate-400">No revenue recorded yet.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D8" />
-                <XAxis type="number" tickFormatter={(v) => `₹${v / 1000}k`} fontSize={12} />
-                <YAxis type="category" dataKey="name" width={110} fontSize={12} />
-                <Tooltip formatter={(v) => inr(v)} />
-                <Bar dataKey="commission" fill="#E3A008" radius={[0, 4, 4, 0]} cursor="pointer"
-                  onClick={(data) => navigate(`/institutions/${data.id}`)} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="bg-white border border-line rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-ink mb-4">Counseling volume by institution</h2>
-          {counseling.length === 0 ? (
-            <p className="text-sm text-slate-400">No institutions yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-line">
-                  <th className="py-2 font-medium">Institution</th>
-                  <th className="py-2 font-medium text-right">Counseled</th>
-                  <th className="py-2 font-medium text-right">Offers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {counseling.slice(0, 8).map((row) => (
-                  <tr key={row.id} className="border-b border-line/60 hover:bg-canvas/60">
-                    <td className="py-2">
-                      <Link to={`/institutions/${row.id}`} className="text-ink hover:text-amber">{row.name}</Link>
-                    </td>
-                    <td className="py-2 text-right">{row.counseling_count}</td>
-                    <td className="py-2 text-right text-good">{row.offers}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      <CrmDashboardSection data={crmData} />
     </div>
   );
 }

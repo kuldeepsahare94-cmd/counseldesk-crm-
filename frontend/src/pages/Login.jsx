@@ -42,7 +42,7 @@ export default function Login() {
         <div className="hidden sm:flex flex-col items-center justify-center w-56 py-10">
           <LampMascot status={lit ? 'success' : 'idle'} />
           <p className="text-white/40 text-xs mt-4 text-center px-4">
-            {lit ? 'Welcome back!' : 'Light up your CRM.'}
+            {lit ? 'Welcome back!' : 'Light up your placement CRM.'}
           </p>
         </div>
 
@@ -52,7 +52,7 @@ export default function Login() {
           <h1 className="font-display text-2xl font-semibold text-ink text-center" style={{ fontFamily: 'var(--font-display)' }}>
             Welcome Back
           </h1>
-          <p className="text-center text-slate-400 text-xs mt-1 mb-6">Sign in to CounselDesk</p>
+          <p className="text-center text-slate-400 text-xs mt-1 mb-6">Sign in to your placement CRM</p>
 
           <label className="text-xs font-medium text-slate-500 block mb-1">Username</label>
           <input required autoFocus value={username} onChange={(e) => setUsername(e.target.value)}
