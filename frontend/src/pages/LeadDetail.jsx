@@ -9,6 +9,7 @@ import { api } from '../api';
 import { usePermissions } from '../context/usePermissions';
 import StatusBadge from '../components/StatusBadge';
 import DisposeLeadModal from '../components/DisposeLeadModal';
+import { accentGradient } from '../theme/moduleAccents';
 import { CallsTab, MeetingsTab, TasksTab, DocumentsTab, DealsTab, NotesTab } from '../components/LeadRelatedTabs';
 
 const FUNNEL_STAGES = ['New', 'Contacted', 'Interested', 'Follow-up', 'Converted'];
@@ -249,7 +250,7 @@ export default function LeadDetail() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start gap-3.5 min-w-0">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg shrink-0"
-              style={{ background: 'linear-gradient(135deg, #F472B6, #C026D3)' }}>
+              style={{ background: accentGradient('leads') }}>
               {initialsOf(lead.student_name)}
             </div>
             <div className="min-w-0">
@@ -459,6 +460,22 @@ export default function LeadDetail() {
                 <div className="flex justify-between"><dt className="text-slate-400">Lead ID</dt><dd className="text-ink">L-{String(lead.id).padStart(4, '0')}</dd></div>
               </dl>
             </div>
+
+            {can('leads', 'edit') && !lead.converted_contact_id && (
+              <div className="card p-4">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase mb-2">Change Status</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_STATUSES.map((s) => (
+                    <button key={s} onClick={() => changeStatus(s)}
+                      className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
+                        lead.status === s ? 'bg-emerald-50 border-good text-good' : 'border-line text-slate-500 hover:border-ink/40'
+                      }`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* CENTER: Additional Details + Personal Information — matching
@@ -491,22 +508,6 @@ export default function LeadDetail() {
                 <div className="flex justify-between"><dt className="text-slate-400">Date of Birth</dt><dd className="text-ink">{lead.date_of_birth || '—'}</dd></div>
               </dl>
             </div>
-
-            {can('leads', 'edit') && !lead.converted_contact_id && (
-              <div className="card p-4">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase mb-2">Change Status</h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {ALL_STATUSES.map((s) => (
-                    <button key={s} onClick={() => changeStatus(s)}
-                      className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
-                        lead.status === s ? 'bg-emerald-50 border-good text-good' : 'border-line text-slate-500 hover:border-ink/40'
-                      }`}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
                     {/* RIGHT: Lead Score & Insights, Recent Activity — matching the
