@@ -460,4 +460,64 @@ export const api = {
     a.click();
     URL.revokeObjectURL(url);
   },
+
+  // ===== Internal team chat =====
+  chatUsers: () => req('GET', '/chat/users'),
+  chatConversations: () => req('GET', '/chat/conversations'),
+  chatConversation: (id) => req('GET', `/chat/conversations/${id}`),
+  chatOpenDirect: (userId) => req('POST', '/chat/direct', { user_id: userId }),
+  chatCreateGroup: (name, memberIds) => req('POST', '/chat/groups', { name, member_ids: memberIds }),
+  chatAddMembers: (id, memberIds) => req('POST', `/chat/conversations/${id}/members`, { member_ids: memberIds }),
+  chatRemoveMember: (id, userId) => req('DELETE', `/chat/conversations/${id}/members/${userId}`),
+  chatRenameGroup: (id, name) => req('PUT', `/chat/conversations/${id}/name`, { name }),
+  chatLeave: (id) => req('POST', `/chat/conversations/${id}/leave`),
+  chatMute: (id, muted) => req('POST', `/chat/conversations/${id}/mute`, { muted }),
+  chatMessages: (id, before) => req('GET', `/chat/conversations/${id}/messages${before ? `?before=${before}` : ''}`),
+  chatMarkRead: (id, upto) => req('POST', `/chat/conversations/${id}/read`, { upto_message_id: upto }),
+  chatEditMessage: (id, body) => req('PUT', `/chat/messages/${id}`, { body }),
+  chatDeleteMessage: (id) => req('DELETE', `/chat/messages/${id}`),
+  chatSearch: (q) => req('GET', `/chat/search?q=${encodeURIComponent(q)}`),
+  chatPoll: (since, conversationId) => req(
+    'GET',
+    `/chat/poll?since=${since || 0}${conversationId ? `&conversation_id=${conversationId}` : ''}`,
+  ),
+  chatAttachmentUrl: (id) => `${BASE}/chat/attachments/${id}`,
+
+  // Attachments need multipart, which req() cannot send (it sets a JSON
+  // content-type, which would break the file boundary).
+  chatSend: async (conversationId, { body, files = [], replyToId, ref } = {}) => {
+    const token = localStorage.getItem('cd_token');
+    if (!files.length) {
+      return req('POST', `/chat/conversations/${conversationId}/messages`, {
+        body, reply_to_id: replyToId || null,
+        ref_module: ref?.module, ref_record_id: ref?.record_id, ref_label: ref?.label,
+      });
+    }
+    const fd = new FormData();
+    if (body) fd.append('body', body);
+    if (replyToId) fd.append('reply_to_id', replyToId);
+    if (ref?.module) { fd.append('ref_module', ref.module); fd.append('ref_record_id', ref.record_id); fd.append('ref_label', ref.label || ''); }
+    for (const f of files) fd.append('files', f);
+    const res = await fetch(`${BASE}/chat/conversations/${conversationId}/messages`, {
+      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+    return data;
+  },
+
+  chatBroadcast: async (userIds, { body, files = [] } = {}) => {
+    const token = localStorage.getItem('cd_token');
+    if (!files.length) return req('POST', '/chat/broadcast', { user_ids: userIds, body });
+    const fd = new FormData();
+    fd.append('user_ids', JSON.stringify(userIds));
+    if (body) fd.append('body', body);
+    for (const f of files) fd.append('files', f);
+    const res = await fetch(`${BASE}/chat/broadcast`, {
+      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Broadcast failed (${res.status})`);
+    return data;
+  },
 };
