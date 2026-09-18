@@ -1,9 +1,50 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, 'crm.db'));
+// Path comes from dataDir.js so the database lives on the persistent disk
+// in production and in backend/ locally — see that file for why.
+const { DB_FILE } = require('./dataDir');
+
+const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+
+// ---------------------------------------------------------------------------
+// Boolean binding safety net.
+//
+// better-sqlite3 refuses to bind JavaScript booleans — it throws
+// "SQLite3 can only bind numbers, strings, bigints, buffers, and null".
+// Any checkbox in the UI sends a real `true`/`false`, so a plain
+// `INSERT ... VALUES (@active)` blew up with a 500 the moment a user ticked
+// a box. That hit product creation, and the same `{...req.body}` spread
+// pattern exists in accounts, contacts, opportunities, quotations,
+// subscriptions and tickets — so this is fixed once, here, at the binding
+// layer rather than seven times at the call sites where the next new route
+// would just reintroduce it.
+//
+// SQLite has no boolean type; it stores these as 1/0 already, so coercing
+// is exactly what the schema expects and changes no stored values.
+// ---------------------------------------------------------------------------
+const coerceBooleans = (value) => {
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (Array.isArray(value)) return value.map(coerceBooleans);
+  if (value && typeof value === 'object' && value.constructor === Object) {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = coerceBooleans(v);
+    return out;
+  }
+  return value;
+};
+
+const originalPrepare = db.prepare.bind(db);
+db.prepare = (sql) => {
+  const stmt = originalPrepare(sql);
+  for (const method of ['run', 'get', 'all', 'iterate']) {
+    const original = stmt[method].bind(stmt);
+    stmt[method] = (...args) => original(...args.map(coerceBooleans));
+  }
+  return stmt;
+};
 
 db.exec(`
 -- ===== Roles & Permissions =====
