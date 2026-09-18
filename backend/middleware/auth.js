@@ -1,6 +1,19 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
+// Inlined rather than imported from services/chatService to keep the auth
+// middleware free of a dependency on a feature module (chatService requires
+// db, which requires dataDir — a cycle risk in the auth path).
+const lastPresenceWrite = new Map();
+function touchPresence(userId) {
+  const now = Date.now();
+  if (now - (lastPresenceWrite.get(userId) || 0) < 20000) return;
+  lastPresenceWrite.set(userId, now);
+  try {
+    db.prepare("UPDATE users SET last_seen_at = datetime('now') WHERE id = ?").run(userId);
+  } catch { /* column not migrated yet on an old database — presence is best-effort */ }
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
 function loadPermissions(roleId) {
@@ -24,8 +37,23 @@ function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Not logged in' });
 
+  // Only a genuine token problem is a 401. Previously this whole block was
+  // wrapped in one try/catch that reported EVERY failure as "Session expired,
+  // please log in again" — so a transient database error while loading the
+  // user or their permissions silently logged people out and sent them back
+  // to the login screen, with a message that pointed at entirely the wrong
+  // cause.
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch (e) {
+    const expired = e && e.name === 'TokenExpiredError';
+    return res.status(401).json({
+      error: expired ? 'Session expired, please log in again' : 'Your sign-in could not be verified. Please log in again.',
+    });
+  }
+
+  try {
     const user = db.prepare(`
       SELECT u.id, u.username, u.full_name, u.active, u.role_id, r.name AS role_name
       FROM users u LEFT JOIN roles r ON r.id = u.role_id
@@ -34,9 +62,17 @@ function requireAuth(req, res, next) {
     if (!user || !user.active) return res.status(401).json({ error: 'Account is inactive or no longer exists' });
     user.permissions = loadPermissions(user.role_id);
     req.user = user;
+    // Presence for the team chat: "online" means signed in and using the
+    // CRM, so it is refreshed by any authenticated request rather than only
+    // by chat traffic — otherwise someone working in Leads all morning shows
+    // as offline to their colleagues. Throttled to one write per 20s.
+    touchPresence(user.id);
     next();
   } catch (e) {
-    return res.status(401).json({ error: 'Session expired, please log in again' });
+    // A server-side fault, not an authentication failure. Reporting 500 keeps
+    // the user signed in and tells them something true.
+    console.error('[auth] failed to load user/permissions:', e);
+    return res.status(500).json({ error: 'Could not verify your account right now. Please try again.' });
   }
 }
 

@@ -23,6 +23,7 @@ require('./db-phase31-email-diagnostics');
 require('./db-phase32-quotation-discount');
 require('./db-phase33-wa-quick-templates');
 require('./db-phase34-lead-company');
+require('./db-phase35-chat');
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/payments', requireAuth, require('./routes/payments'));
 app.use('/api/dashboard', requireAuth, require('./routes/dashboard'));
 app.use('/api/reports', requireAuth, require('./routes/reports'));
 app.use('/api/notifications', requireAuth, require('./routes/notifications'));
+app.use('/api/chat', requireAuth, require('./routes/chat'));
 app.use('/api/roles', requireAuth, require('./routes/roles'));
 app.use('/api/users', requireAuth, require('./routes/users'));
 app.use('/api/settings', requireAuth, require('./routes/settings'));
