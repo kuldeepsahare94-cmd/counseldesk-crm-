@@ -22,6 +22,7 @@ require('./db-phase30-email-campaigns');
 require('./db-phase31-email-diagnostics');
 require('./db-phase32-quotation-discount');
 require('./db-phase33-wa-quick-templates');
+require('./db-phase34-lead-company');
 
 const app = express();
 
