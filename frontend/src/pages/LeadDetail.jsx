@@ -9,7 +9,9 @@ import { api } from '../api';
 import { usePermissions } from '../context/usePermissions';
 import StatusBadge from '../components/StatusBadge';
 import DisposeLeadModal from '../components/DisposeLeadModal';
-import { accentFor, accentGradient } from '../theme/moduleAccents';
+import WhatsAppTemplateModal from '../components/WhatsAppTemplateModal';
+import { accentFor } from '../theme/moduleAccents';
+import { avatarGradientFor } from '../theme/avatarColors';
 import { CallsTab, MeetingsTab, TasksTab, DocumentsTab, DealsTab, NotesTab } from '../components/LeadRelatedTabs';
 
 const FUNNEL_STAGES = ['New', 'Contacted', 'Interested', 'Follow-up', 'Converted'];
@@ -31,6 +33,87 @@ const PAGE_TABS = [
   { key: 'documents', label: 'Documents', icon: Paperclip },
   { key: 'notes', label: 'Notes', icon: StickyNote },
 ];
+
+// Converting a lead creates an ACCOUNT, which is an organisation — a
+// different thing from the lead's own name. The old flow was a bare
+// confirm() that sent no account name at all, so the backend fell back to
+// the person's name and every converted account was called "Adarsh Kashyap"
+// instead of "Smart Business Solution". This asks, pre-filled from whatever
+// company field the lead actually has.
+function ConvertLeadModal({ lead, onClose, onConverted }) {
+  const companyOnLead = lead.account_name || lead.company_name || lead.company || '';
+  const [accountName, setAccountName] = useState(companyOnLead);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const personName = (lead.student_name || '').trim();
+  const looksLikePerson = accountName.trim() && accountName.trim().toLowerCase() === personName.toLowerCase();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const name = accountName.trim();
+    if (!name) { setError('Account name is required.'); return; }
+    setSaving(true); setError('');
+    try {
+      onConverted(await api.convertLead(lead.id, { account_name: name }));
+    } catch (err) {
+      let msg = err.message;
+      try { msg = JSON.parse(err.message).error || msg; } catch { /* plain message */ }
+      setError(msg);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form onSubmit={submit} className="bg-white rounded-xl p-5 w-full max-w-md relative">
+        <button type="button" onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-ink">
+          <X className="w-4 h-4" />
+        </button>
+        <h2 className="text-sm font-semibold text-ink mb-1">Convert lead</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Creates a Contact for <strong className="text-ink">{personName}</strong>, an Account for their
+          company, and an Opportunity linking the two.
+        </p>
+
+        <label className="text-xs font-medium text-slate-500 block mb-1">
+          Account / customer name <span className="text-warn">*</span>
+        </label>
+        <input
+          autoFocus
+          required
+          value={accountName}
+          onChange={(e) => { setAccountName(e.target.value); setError(''); }}
+          placeholder="e.g. Smart Business Solution"
+          className="border border-line rounded-lg px-3 py-2 text-sm w-full"
+        />
+        <p className="text-xs text-slate-400 mt-1">
+          {companyOnLead
+            ? 'Taken from the company on this lead — edit it if it is wrong.'
+            : 'This lead has no company recorded, so enter the organisation name.'}
+        </p>
+
+        {looksLikePerson && (
+          <p className="text-xs text-warn bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+            That is the same as the contact&apos;s own name. An Account is the company — if
+            {' '}{personName} is a sole trader that is fine, otherwise use the business name.
+          </p>
+        )}
+
+        {error && (
+          <p className="text-xs text-warn bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{error}</p>
+        )}
+
+        <div className="flex gap-2 mt-4">
+          <button type="button" onClick={onClose} className="btn btn-secondary flex-1">Cancel</button>
+          <button type="submit" disabled={saving || !accountName.trim()} className="btn btn-primary flex-1 disabled:opacity-50">
+            {saving ? 'Converting…' : 'Convert lead'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function initialsOf(name) {
   return (name || '?').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -105,21 +188,53 @@ function ScoreInsightsCard({ scoring }) {
 
 // Built entirely from the same response's real `negatives` — no invented
 // copy. A lead with nothing negative shows no card at all.
-function SuggestedNextSteps({ scoring }) {
+// Maps a suggestion to the action that actually resolves it, so the list
+// is a set of buttons rather than a read-only checklist. Matching on the
+// verb the scoring engine now uses — the suggestions were rewritten from
+// status reports ("No connected calls yet") into instructions ("Call this
+// lead and log a connected call"), which is what makes this possible.
+function suggestionAction(text) {
+  if (/^Add /i.test(text)) return { label: 'Edit lead', key: 'edit' };
+  if (/^Call this lead|connected call/i.test(text)) return { label: 'Log call', key: 'call' };
+  if (/Log a note|record of contact/i.test(text)) return { label: 'Add note', key: 'note' };
+  if (/Schedule a follow-up/i.test(text)) return { label: 'Schedule', key: 'schedule' };
+  if (/Follow up|Reach out|Re-engage/i.test(text)) return { label: 'WhatsApp', key: 'whatsapp' };
+  if (/Re-qualify/i.test(text)) return { label: 'Edit lead', key: 'edit' };
+  return null;
+}
+
+function SuggestedNextSteps({ scoring, onAction }) {
   const items = (scoring?.components || []).flatMap((c) => c.negatives || []).slice(0, 5);
   if (items.length === 0) return null;
   return (
     <div className="card p-4">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase mb-3 flex items-center gap-1.5">
-        <Lightbulb className="w-3.5 h-3.5 text-amber" /> Suggested Next Steps
-      </h3>
+      <div className="flex items-center gap-2 mb-3 pb-2.5 border-b border-line">
+        <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
+          style={{ background: '#D9770622', color: '#D97706' }}>
+          <Lightbulb className="w-3.5 h-3.5" />
+        </span>
+        <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Suggested Next Steps</h3>
+      </div>
       <div className="space-y-2">
-        {items.map((text, i) => (
-          <div key={i} className="flex items-start gap-2 text-sm">
-            <span className="w-4 h-4 rounded-full border-2 border-line shrink-0 mt-0.5" />
-            <span className="text-ink">{text}</span>
-          </div>
-        ))}
+        {items.map((text, i) => {
+          const action = suggestionAction(text);
+          return (
+            <div key={i} className="flex items-start justify-between gap-2 text-sm group">
+              <div className="flex items-start gap-2 min-w-0">
+                <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                  style={{ background: '#D9770618', color: '#D97706' }}>{i + 1}</span>
+                <span className="text-ink">{text}</span>
+              </div>
+              {action && onAction && (
+                <button onClick={() => onAction(action.key)}
+                  className="text-xs font-semibold shrink-0 whitespace-nowrap px-2 py-1 rounded-lg transition-colors"
+                  style={{ background: `${ACCENT.solid}12`, color: ACCENT.solid }}>
+                  {action.label}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -127,6 +242,7 @@ function SuggestedNextSteps({ scoring }) {
 
 const QUICK_ACTIONS = [
   { key: 'call', label: 'Log Call', icon: Phone, from: '#818CF8', to: '#4338CA' },
+  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, from: '#4ADE80', to: '#15803D' },
   { key: 'email', label: 'Send Email', icon: Mail, from: '#93C5FD', to: '#1D4ED8' },
   { key: 'meeting', label: 'Schedule Meeting', icon: Calendar, from: '#6EE7B7', to: '#047857' },
   { key: 'task', label: 'Create Task', icon: CheckSquare, from: '#FCD34D', to: '#B45309' },
@@ -137,6 +253,26 @@ const QUICK_ACTIONS = [
 // This module's identity colour, from the shared accent system — the same
 // fuchsia the sidebar and Leads list already use.
 const ACCENT = accentFor('leads');
+
+
+// A section header with a coloured icon chip. The three info cards were
+// visually identical grey text blocks — same size, same weight, no anchor
+// for the eye. A small tinted icon gives each one an identity and makes
+// the card feel deliberate rather than like raw output.
+function CardHeader({ icon: Icon, title, tint, action }) {
+  return (
+    <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-line">
+      <div className="flex items-center gap-2">
+        <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
+          style={{ background: `${tint}1A`, color: tint }}>
+          <Icon className="w-3.5 h-3.5" />
+        </span>
+        <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{title}</h3>
+      </div>
+      {action}
+    </div>
+  );
+}
 
 // One compact definition row. Every field rendered through this so label
 // and value alignment is identical everywhere, and an empty value always
@@ -169,6 +305,8 @@ export default function LeadDetail() {
   const can = usePermissions();
   const [lead, setLead] = useState(null);
   const [disposing, setDisposing] = useState(false);
+  const [waOpen, setWaOpen] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [pageTab, setPageTab] = useState('overview');
   const [tab, setTab] = useState('note');
   const [note, setNote] = useState('');
@@ -211,14 +349,14 @@ export default function LeadDetail() {
     load();
   };
 
-  const convert = async () => {
-    if (!confirm(`Convert ${lead.student_name} to a Contact, Account, and Opportunity?`)) return;
-    const res = await api.convertLead(id);
-    navigate(`/records/contacts/${res.contact_id}`);
-  };
+  // Conversion needs the COMPANY name, which is a different thing from the
+  // lead's own name — so it asks, rather than silently defaulting. It used to
+  // name every Account after the person.
+  const convert = () => setConverting(true);
 
   const runQuickAction = (key) => {
     if (key === 'call') return setDisposing(true);
+    if (key === 'whatsapp') return setWaOpen(true);
     if (key === 'email') return lead.email && window.open(`mailto:${lead.email}`, '_self');
     if (key === 'meeting') return setPageTab('meetings');
     if (key === 'task') return setPageTab('tasks');
@@ -233,7 +371,7 @@ export default function LeadDetail() {
   const filteredActivities = tab === 'all' ? lead.activities : lead.activities.filter((a) => a.type === tab);
 
   return (
-    <div className="max-w-[1500px] mx-auto">
+    <div className="max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-1.5 text-xs text-slate-500">
           <button onClick={() => navigate('/leads')} className="flex items-center gap-1 hover:text-ink font-medium">
@@ -275,7 +413,7 @@ export default function LeadDetail() {
         <div className="relative flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start gap-3.5 min-w-0">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white text-xl shrink-0 shadow-md"
-              style={{ background: accentGradient('leads') }}>
+              style={{ background: avatarGradientFor(lead.student_name) }}>
               {initialsOf(lead.student_name)}
             </div>
             <div className="min-w-0">
@@ -288,7 +426,8 @@ export default function LeadDetail() {
                   <span className="flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5" /> {lead.mobile}
                     <a href={`tel:${lead.mobile}`} aria-label="Call" className="text-[var(--color-brand)] hover:opacity-70"><Phone className="w-3.5 h-3.5" /></a>
-                    <a href={`https://wa.me/${lead.mobile.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="text-[var(--color-success)] hover:opacity-70"><MessageCircle className="w-3.5 h-3.5" /></a>
+                    <button onClick={(e) => { e.preventDefault(); setWaOpen(true); }} aria-label="Send WhatsApp"
+              className="text-[var(--color-success)] hover:opacity-70"><MessageCircle className="w-3.5 h-3.5" /></button>
                   </span>
                 )}
                 {lead.email && (
@@ -452,20 +591,35 @@ export default function LeadDetail() {
            instead of stacking, so the page is materially shorter AND can't
            leave a column-shaped gap. Denser padding and tighter gaps
            throughout for the same reason. */
-        <div className="grid lg:grid-cols-[2fr_1fr] gap-4 items-start">
+        <>
+        <div className="card p-3 mb-4">
+          <div className="flex items-center gap-2 overflow-x-auto thin-scroll">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide shrink-0 pl-1 pr-2">Quick Actions</span>
+            {QUICK_ACTIONS.map((a) => (
+              <button key={a.key} onClick={() => runQuickAction(a.key)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-line hover:shadow-md hover:-translate-y-0.5 transition-all shrink-0">
+                <span className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-sm"
+                  style={{ background: `linear-gradient(135deg, ${a.from}, ${a.to})` }}>
+                  <a.icon className="w-3.5 h-3.5" />
+                </span>
+                <span className="text-xs font-medium text-ink whitespace-nowrap">{a.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
 
           {/* MAIN */}
           <div className="space-y-4">
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="card p-4">
-                <div className="flex items-center justify-between mb-2.5">
-                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Basic Information</h3>
-                  {can('leads', 'edit') && (
+                <CardHeader icon={Info} title="Basic Information" tint={ACCENT.solid}
+                  action={can('leads', 'edit') && (
                     <button onClick={() => setEditing(true)} className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--color-brand)' }}>
                       <Pencil className="w-3 h-3" /> Edit
                     </button>
-                  )}
-                </div>
+                  )} />
                 <dl className="text-sm space-y-1.5">
                   <Row label="Full Name" value={lead.student_name} strong />
                   <Row label="Mobile" value={lead.mobile} />
@@ -483,7 +637,7 @@ export default function LeadDetail() {
 
               <div className="space-y-4">
                 <div className="card p-4">
-                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2.5">Additional Details</h3>
+                  <CardHeader icon={TrendingUp} title="Additional Details" tint="#D97706" />
                   <dl className="text-sm space-y-1.5">
                     <Row label="Product Interest" value={lead.product_interest} />
                     <Row label="Service Interest" value={lead.service_interest} />
@@ -493,7 +647,7 @@ export default function LeadDetail() {
                 </div>
 
                 <div className="card p-4">
-                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2.5">Personal Information</h3>
+                  <CardHeader icon={UserCheck} title="Personal Information" tint="#0D9488" />
                   <dl className="text-sm space-y-1.5">
                     <Row label="Gender" value={lead.gender} />
                     <Row label="Date of Birth" value={lead.date_of_birth} />
@@ -504,7 +658,7 @@ export default function LeadDetail() {
 
             {can('leads', 'edit') && !lead.converted_contact_id && (
               <div className="card p-4">
-                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2.5">Change Status</h3>
+                <CardHeader icon={CheckSquare} title="Change Status" tint="#0284C7" />
                 <div className="flex flex-wrap gap-1.5">
                   {ALL_STATUSES.map((st) => (
                     <button key={st} onClick={() => changeStatus(st)}
@@ -561,26 +715,11 @@ export default function LeadDetail() {
           <div className="space-y-4">
             <ScoreInsightsCard scoring={scoring} />
 
-            <div className="card p-4">
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-3">Quick Actions</h3>
-              {/* Three across rather than two — shorter, and the tiles stop
-                  looking like oversized empty boxes. Gradient icon chips
-                  replace the pale flat ones. */}
-              <div className="grid grid-cols-3 gap-2">
-                {QUICK_ACTIONS.map((a) => (
-                  <button key={a.key} onClick={() => runQuickAction(a.key)}
-                    className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-line hover:shadow-md hover:-translate-y-0.5 transition-all text-center">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm"
-                      style={{ background: `linear-gradient(135deg, ${a.from}, ${a.to})` }}>
-                      <a.icon className="w-4 h-4" />
-                    </div>
-                    <span className="text-[10px] font-medium text-ink leading-tight">{a.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <SuggestedNextSteps scoring={scoring} />
+            <SuggestedNextSteps scoring={scoring} onAction={(key) => {
+              if (key === 'edit') return setEditing(true);
+              if (key === 'schedule') return setScheduling(true);
+              return runQuickAction(key);
+            }} />
 
             <div className="card p-4">
               <div className="flex items-center justify-between mb-2">
@@ -593,6 +732,7 @@ export default function LeadDetail() {
             </div>
           </div>
         </div>
+        </>
       )}
 
       {pageTab === 'activity' && (
@@ -639,9 +779,22 @@ export default function LeadDetail() {
       {pageTab === 'documents' && <div className="card p-4"><DocumentsTab leadId={id} /></div>}
       {pageTab === 'notes' && <div className="card p-4"><NotesTab leadId={id} /></div>}
 
+      {converting && (
+        <ConvertLeadModal
+          lead={lead}
+          onClose={() => setConverting(false)}
+          onConverted={(res) => { setConverting(false); navigate(`/records/contacts/${res.contact_id}`); }}
+        />
+      )}
+
       {disposing && (
         <DisposeLeadModal lead={lead} onClose={() => setDisposing(false)}
           onDisposed={() => { setDisposing(false); load(); }} />
+      )}
+
+      {waOpen && (
+        <WhatsAppTemplateModal lead={lead} senderName={lead.assigned_counselor}
+          onClose={() => setWaOpen(false)} />
       )}
     </div>
   );
