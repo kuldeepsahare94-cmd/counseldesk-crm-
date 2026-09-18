@@ -324,7 +324,11 @@ export const api = {
   listAudit: (params) => req('GET', '/admin/audit' + qs(params)),
   exportUrl: (moduleApiName) => `${BASE}/admin/export/${moduleApiName}`,
   importTemplateUrl: (moduleApiName) => `${BASE}/admin/import-template/${moduleApiName}`,
-  importCsv: (moduleApiName, csv, dryRun) => req('POST', `/admin/import/${moduleApiName}`, { csv, dry_run: !!dryRun }),
+  importCsv: (moduleApiName, csv, dryRun, createMissingFields) =>
+    req('POST', `/admin/import/${moduleApiName}`, {
+      csv, dry_run: !!dryRun, create_missing_fields: !!createMissingFields,
+    }),
+  importAnalyze: (moduleApiName, csv) => req('POST', `/admin/import-analyze/${moduleApiName}`, { csv }),
 
   // Customer 360 + scoring
   customer360: (accountId) => req('GET', `/c360/accounts/${accountId}`),
