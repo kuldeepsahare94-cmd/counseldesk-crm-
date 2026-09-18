@@ -3,6 +3,78 @@
 const API_ROOT = import.meta.env.VITE_API_BASE_URL || '';
 const BASE = `${API_ROOT}/api`;
 
+// ---------------------------------------------------------------------------
+// Authenticated file download.
+//
+// A plain <a href="/api/…/download"> cannot work here: the JWT lives in
+// localStorage and is sent as an Authorization header, but browsers do not
+// attach headers to a link navigation — so every such request arrived
+// unauthenticated and was rejected with 401.
+//
+// This fetches the file WITH the header, then hands the browser a blob to
+// save. Errors surface as real errors instead of the browser silently
+// showing a JSON 401 body in a new tab.
+// ---------------------------------------------------------------------------
+export async function downloadFile(path, fallbackName = 'download') {
+  const token = localStorage.getItem('cd_token');
+  const res = await fetch(BASE + path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch { /* non-JSON error body; keep the status message */ }
+    if (res.status === 401) message = 'Your session has expired — please sign in again.';
+    if (res.status === 403) message = "You don't have permission to download this file.";
+    throw new Error(message);
+  }
+
+  // Prefer the filename the server suggests, so downloads keep their real
+  // names rather than a generic one.
+  let filename = fallbackName;
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  if (match) filename = decodeURIComponent(match[1].trim());
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke on the next tick — revoking immediately can cancel the download
+  // in some browsers before it has started reading the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return filename;
+}
+
+// Opens a PDF in a new tab (rather than saving it), still authenticated.
+export async function openFileInTab(path) {
+  const token = localStorage.getItem('cd_token');
+  const res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    let message = `Could not open the file (${res.status})`;
+    try { const d = await res.json(); if (d?.error) message = d.error; } catch { /* keep status */ }
+    if (res.status === 401) message = 'Your session has expired — please sign in again.';
+    throw new Error(message);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const win = window.open(url, '_blank');
+  if (!win) {
+    // Pop-up blocked — fall back to saving it so the click still does
+    // something useful rather than appearing to do nothing.
+    const a = document.createElement('a');
+    a.href = url; a.download = 'document.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function req(method, path, body) {
   const token = localStorage.getItem('cd_token');
   const headers = {};
@@ -26,7 +98,17 @@ async function req(method, path, body) {
 
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || res.statusText);
+  if (!res.ok) {
+    // Attach the full error payload, not just its message. Some endpoints
+    // (email test-send) return a request_id and the raw underlying error
+    // alongside the friendly one specifically so a failure can be diagnosed
+    // without needing hosting-dashboard access — discarding everything but
+    // .error would throw that away.
+    const err = new Error(data?.error || res.statusText);
+    err.requestId = data?.request_id;
+    err.rawError = data?.raw_error;
+    throw err;
+  }
   return data;
 }
 
@@ -63,7 +145,7 @@ export const api = {
   createPayment: (body) => req('POST', '/payments', body),
   updatePayment: (id, body) => req('PUT', `/payments/${id}`, body),
   deletePayment: (id) => req('DELETE', `/payments/${id}`),
-  receiptUrl: (id, institute) => `${BASE}/payments/${id}/receipt?institute=${institute}`,
+  downloadReceipt: (id, institute) => downloadFile(`/payments/${id}/receipt?institute=${institute}`, `receipt-${id}.pdf`),
 
   // dashboard
   dashboard: () => req('GET', '/dashboard'),
@@ -190,6 +272,7 @@ export const api = {
   deleteModuleMeta: (id) => req('DELETE', `/modules/${id}`),
   createModuleField: (moduleId, body) => req('POST', `/modules/${moduleId}/fields`, body),
   updateModuleField: (moduleId, fieldId, body) => req('PUT', `/modules/${moduleId}/fields/${fieldId}`, body),
+  moduleFieldUsage: (moduleId, fieldId) => req('GET', `/modules/${moduleId}/fields/${fieldId}/usage`),
   deleteModuleField: (moduleId, fieldId) => req('DELETE', `/modules/${moduleId}/fields/${fieldId}`),
 
   // Universal CRM — generic record CRUD (works for standard + custom modules)
@@ -233,7 +316,8 @@ export const api = {
   deletePipeline: (id) => req('DELETE', `/pipelines/${id}`),
 
   // Universal CRM — quotation PDF + send
-  quotationPdfUrl: (id, institute) => `${BASE}/quotations/${id}/pdf?institute=${institute || 'A'}`,
+  downloadQuotationPdf: (id, institute) => downloadFile(`/quotations/${id}/pdf?institute=${institute || 'A'}`, `quotation-${id}.pdf`),
+  openQuotationPdf: (id, institute) => openFileInTab(`/quotations/${id}/pdf?institute=${institute || 'A'}`),
   sendQuotation: (id, body) => req('POST', `/quotations/${id}/send`, body),
 
   // Universal CRM — Audit log + Import/Export
@@ -241,6 +325,55 @@ export const api = {
   exportUrl: (moduleApiName) => `${BASE}/admin/export/${moduleApiName}`,
   importTemplateUrl: (moduleApiName) => `${BASE}/admin/import-template/${moduleApiName}`,
   importCsv: (moduleApiName, csv, dryRun) => req('POST', `/admin/import/${moduleApiName}`, { csv, dry_run: !!dryRun }),
+
+  // Customer 360 + scoring
+  customer360: (accountId) => req('GET', `/c360/accounts/${accountId}`),
+  accountScore: (accountId) => req('GET', `/c360/accounts/${accountId}/score`),
+  leadScore: (leadId) => req('GET', `/c360/leads/${leadId}/score`),
+  // Email campaigns
+  listCampaigns: () => req('GET', '/email-campaigns'),
+  getCampaign: (id) => req('GET', `/email-campaigns/${id}`),
+  createCampaign: (body) => req('POST', '/email-campaigns', body),
+  updateCampaign: (id, body) => req('PUT', `/email-campaigns/${id}`, body),
+  deleteCampaign: (id) => req('DELETE', `/email-campaigns/${id}`),
+  sendCampaign: (id) => req('POST', `/email-campaigns/${id}/send`, {}),
+  testCampaign: (id, to) => req('POST', `/email-campaigns/${id}/test`, { to }),
+  pauseCampaign: (id) => req('POST', `/email-campaigns/${id}/pause`, {}),
+  resumeCampaign: (id) => req('POST', `/email-campaigns/${id}/resume`, {}),
+  duplicateCampaign: (id) => req('POST', `/email-campaigns/${id}/duplicate`, {}),
+  campaignAudiences: () => req('GET', '/email-campaigns/audiences'),
+  previewAudience: (recipientSource, filters) =>
+    req('POST', '/email-campaigns/preview-audience', { recipient_source: recipientSource, filters }),
+  listCampaignTemplates: () => req('GET', '/email-campaigns/templates'),
+  createCampaignTemplate: (body) => req('POST', '/email-campaigns/templates', body),
+  listUnsubscribes: () => req('GET', '/email-campaigns/unsubscribes/list'),
+  addUnsubscribe: (email, reason) => req('POST', '/email-campaigns/unsubscribes/list', { email, reason }),
+
+  // Inbox (inbound email)
+  listInbox: (params) => req('GET', '/inbox' + qs(params)),
+  getEmail: (id) => req('GET', `/inbox/${id}`),
+  markEmailRead: (id) => req('POST', `/inbox/${id}/read`, { read: true }),
+  linkEmail: (id, relatedModule, relatedRecordId) =>
+    req('POST', `/inbox/${id}/link`, { related_module: relatedModule, related_record_id: relatedRecordId }),
+  replyEmail: (id, body) => req('POST', `/inbox/${id}/reply`, body),
+  syncInbox: (accountId) => req('POST', '/inbox/sync', accountId ? { account_id: accountId } : {}),
+  inboxSyncStatus: () => req('GET', '/inbox/sync/status'),
+  downloadEmailAttachment: (id, name) => downloadFile(`/inbox/attachments/${id}/download`, name || 'attachment'),
+
+  // Email account configuration
+  getOrgEmail: () => req('GET', '/email-settings/org'),
+  saveOrgEmail: (body) => req('PUT', '/email-settings/org', body),
+  getMyEmail: () => req('GET', '/email-settings/me'),
+  emailDiagnostics: (params) => req('GET', '/email-settings/diagnostics' + qs(params)),
+  saveMyEmail: (body) => req('PUT', '/email-settings/me', body),
+  testEmail: (scope) => req('POST', '/email-settings/test', { scope }),
+
+  listWaQuickTemplates: () => req('GET', '/wa-quick-templates'),
+  createWaQuickTemplate: (body) => req('POST', '/wa-quick-templates', body),
+
+  addNote: (relatedModule, relatedRecordId, body) =>
+    req('POST', '/notes', { body, related_module: relatedModule, related_record_id: relatedRecordId }),
+  aiCustomerSummary: (accountId, question) => req('POST', `/c360/accounts/${accountId}/ai-summary`, { question }),
 
   // Call disposition + call analytics
   disposeCall: (body) => req('POST', '/calls/dispose', body),
@@ -266,7 +399,7 @@ export const api = {
   listDocuments: (params) => req('GET', '/documents' + qs(params)),
   createDocumentLink: (body) => req('POST', '/documents', body),
   deleteDocument: (id) => req('DELETE', `/documents/${id}`),
-  documentDownloadUrl: (id) => `${BASE}/documents/${id}/download`,
+  downloadDocument: (id, name) => downloadFile(`/documents/${id}/download`, name || 'document'),
   uploadDocument: async (formData) => {
     // Multipart — can't go through req(), which sets a JSON content-type.
     const res = await fetch(`${BASE}/documents`, {
@@ -294,6 +427,23 @@ export const api = {
 
   // Database backup
   emailBackupNow: (to) => req('POST', '/backup/email-now', { to }),
+  backupStatus: () => req('GET', '/backup/status'),
+
+  // Restore is a multipart upload, so it can't go through req() — that sets
+  // a JSON content-type, which would break the file boundary.
+  restoreBackup: async (file) => {
+    const token = localStorage.getItem('cd_token');
+    const body = new FormData();
+    body.append('file', file);
+    const res = await fetch(`${BASE}/backup/restore`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Restore failed (${res.status})`);
+    return data;
+  },
   downloadBackup: async () => {
     const token = localStorage.getItem('cd_token');
     const res = await fetch(`${BASE}/backup/download`, { headers: { Authorization: `Bearer ${token}` } });
